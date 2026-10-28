@@ -10,9 +10,9 @@
   - Local PostgreSQL 18.6 authentication (`psql.exe`) and Python driver connectivity (`psycopg` 3.3.6) verified via read-only `SELECT version();` checks. `pgAdmin 4` is also accessible locally.
 - **Phase 1 — Requirements and planning:** Completed and committed as `28a14dc23e88cd84e2d9088b8563069c1867ce61` (`Complete Phase 1 project planning, requirements, and MVP scope`).
 - **Phase 2 — System framework and technical design:** Completed and committed as `099510b1babb979cdfaad43c28750498b0b43a26`.
-- **Phase 3 — Core functional application:** Started. Django project/apps, PostgreSQL environment configuration, core models/admin, and initial migrations generated; database migrations have not been applied.
-- **Next recommended task:** Manually enter the authorized PostgreSQL password in the ignored root `.env`, then review the Phase 3 models and generated migrations before a separately approved `migrate` operation.
-- **Scope boundary preserved:** No project database objects or roles were created, no migrations were applied, and no booking views/API or FastAPI app have been implemented. The Phase 1 CSV contains only explicitly synthetic template examples.
+- **Phase 3 — Core functional application:** In progress. Part 1 (Django scaffold and models) is committed; per owner report, migrations have been applied and a superuser created. Part 2 (Mode A discovery API) is implemented and awaiting review/commit.
+- **Next recommended task:** Review the discovery API, then proceed to Phase 3 Part 3 (booking API and transactional database locks).
+- **Scope boundary preserved:** No availability evaluation or booking creation/cancellation endpoint has been implemented in Part 2. The Phase 1 CSV contains only explicitly synthetic template examples.
 
 ## Phase 1 — Requirements and planning
 
@@ -66,20 +66,29 @@ Phase 1 and Phase 2 reflect the 10 approved MVP decisions. Phase 2 documentation
 - FastAPI receives only bounded serializable candidate data, without user PII or booking-write capability. Search results are advisory; Django rechecks authoritatively.
 - The design contains API/schema examples and a logical ERD only. None are implemented or validated against a running application.
 
-## Phase 3 — Core functional application (Part 1: Django scaffolding and models)
+## Phase 3 — Core functional application
 
-**Status:** Scaffolding, environment configuration, models/admin registration, and initial `makemigrations` completed on 2026-10-29. No database migration was applied.
+### Part 1 — Django scaffolding and models
 
-- Generated `backend/config/`, `backend/facilities/`, and `backend/bookings/` with Django 5.2.18.
-- Added root `.env.example` with placeholder configuration and root `.env` with the same keys; `DB_PASSWORD` is blank for the owner to fill locally. `.env` is ignored by Git. The secret key in both files is an explicit placeholder, not a production secret.
-- Configured `python-dotenv` to load the root `.env`, PostgreSQL connection settings from `DB_*`, `Asia/Manila`, `USE_TZ=True`, and `rest_framework`, `facilities`, and `bookings`.
-- Added the Phase 2 facilities/domain models, supporting `FacilityOperatingHours` and `ResourceSport` relations, provenance/rate-fallback fields, and booking snapshots. `Facility.is_demo_data` defaults to `True`; no facility/demo records were created.
-- Registered the facility, schedule, closure, resource, sport, and booking models in Django Admin.
-- Added pinned `python-dotenv==1.2.4` as a direct requirement and regenerated/installed the hash-locked dependency file.
-- `makemigrations` generated `backend/facilities/migrations/0001_initial.py` and `backend/bookings/migrations/0001_initial.py`. It exited successfully, but warned that PostgreSQL migration history could not be checked because the password is blank (`fe_sendauth: no password supplied`).
-- `manage.py check` passed with no issues. `makemigrations --check --dry-run` reported no changes pending; it emitted the same expected connection warning. `pip check` reported no broken requirements.
-- **Not run:** `manage.py migrate`; database schema/object changes; `createsuperuser`; booking views/API or business workflows; FastAPI application.
-- **Manual action:** Enter the PostgreSQL password locally in `.env` without pasting it into chat. After review and approval, verify login and run the separately approved migration step.
+**Status:** Implemented and committed. The owner reports that `manage.py migrate` completed and a Django superuser was created; these manual actions have not been independently reverified here.
+
+- Django project/apps, PostgreSQL environment configuration, core models/admin registrations, and initial migrations were created.
+- `.env.example` contains placeholders; the local `.env` is ignored by Git and must not be committed.
+- `Facility.is_demo_data` defaults to `True`; no facility/demo records were created.
+- Initial validation included `manage.py check`, `makemigrations --check --dry-run`, and `pip check`.
+
+### Part 2 — Mode A facility discovery API
+
+**Status:** Implemented on 2026-10-29; awaiting owner review and commit.
+
+- Added DRF serializers for sports, facility/sport associations, resources, and facility profiles, including supported and matching sports.
+- Added public read-only endpoints for active sports and active facilities, with facility detail retrieval.
+- Facility browsing supports comma-separated sport slugs, default OR (`match=any`) and AND (`match=all`) matching, returning `400` for invalid match modes.
+- Exposed both `/api/facilities/` and the Phase 2-compatible `/api/courts/` list/detail paths. Public list responses include `results` and the selected match mode.
+- Inactive sports, associations, resources, and facilities are excluded from public discovery. Coordinates are returned only for verified, non-demo facilities.
+- Focused API tests cover active catalog filtering, OR/AND behavior, nested data, invalid match mode, and inactive facility privacy.
+- **Not implemented:** availability evaluation or booking creation; these are reserved for later phases/parts.
+- **Next:** Phase 3 Part 3 — booking API and transactional resource locking/conflict prevention.
 
 ## Phase 0.5 — Environment Bootstrap
 
