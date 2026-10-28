@@ -4,11 +4,11 @@
 
 - **Phase 0 — Environment and Dependency Feasibility Audit:** Completed and approved on 2026-10-28.
 - **Phase 0.5 — Environment Bootstrap:** Completed and verified on 2026-10-29.
-  - Git repository initialized locally (`C:\Gilland projects\court_booking`), no remote configured.
+  - Git repository initialized locally (`C:\Gilland projects\court_booking`); initial commit `674e1e224fcac64c7cc97a376e92efd68cd48cf5` created with no remote configured.
   - `.gitignore`, `requirements.in`, and hash-locked `requirements.txt` (942 lines) created and verified.
   - `.venv` (Python 3.13.9, pip 25.2) created and verified (`pip check` passed with no broken requirements).
   - Local PostgreSQL 18.6 authentication (`psql.exe`) and Python driver connectivity (`psycopg` 3.3.6) verified via read-only `SELECT version();` checks. `pgAdmin 4` is also accessible locally.
-- **Next Phase:** **Phase 1 — Project planning and requirements**; the initial Phase 0.5 commit is being finalized from the reviewed bootstrap files in this operation.
+- **Next Phase:** **Phase 1 — Project planning and requirements**.
 - **Scope boundary preserved:** No project database, project role, Django/FastAPI application code, migration, or demo record has been created yet.
 
 ## Phase 0.5 — Environment Bootstrap
@@ -19,7 +19,7 @@
 ### Git and workspace files
 
 - Initialized Git in `C:\Gilland projects\court_booking`; no remote is configured.
-- Bootstrap files selected for the initial commit: `.gitignore`, `PROJECT_STATUS.md`, `requirements.in`, and `requirements.txt`.
+- Initial commit `674e1e224fcac64c7cc97a376e92efd68cd48cf5` contains `.gitignore`, `PROJECT_STATUS.md`, `requirements.in`, and `requirements.txt`.
 - `.gitignore` excludes `.venv/`, `.env` and other `.env.*` files (while allowing placeholder-only `.env.example`), Python bytecode/caches, test/type/coverage caches, build artifacts, local SQLite databases, `local_data/`, `/data/private/`, logs, common key files, and OS metadata files (`Thumbs.db`, `Desktop.ini`, `.DS_Store`). The overly broad `data/` rule was narrowed so future version-controlled sample/synthetic fixtures are not accidentally ignored.
 
 ### Virtual environment
