@@ -8,8 +8,37 @@
   - `.gitignore`, `requirements.in`, and hash-locked `requirements.txt` (942 lines) created and verified.
   - `.venv` (Python 3.13.9, pip 25.2) created and verified (`pip check` passed with no broken requirements).
   - Local PostgreSQL 18.6 authentication (`psql.exe`) and Python driver connectivity (`psycopg` 3.3.6) verified via read-only `SELECT version();` checks. `pgAdmin 4` is also accessible locally.
-- **Next Phase:** **Phase 1 — Project planning and requirements**.
-- **Scope boundary preserved:** No project database, project role, Django/FastAPI application code, migration, or demo record has been created yet.
+- **Phase 1 — Requirements and planning:** Six requested documents created on 2026-10-29; pending owner review and commit.
+- **Next recommended task:** Review and commit the Phase 1 documentation, then proceed to **Phase 2 — System framework and technical design** in `docs/phase-2/`.
+- **Scope boundary preserved:** No project database, project role, Django/FastAPI application code, migration, or application demo/seed record has been created yet. The Phase 1 CSV contains only explicitly synthetic template examples.
+
+## Phase 1 — Requirements and planning
+
+**Status:** Documentation prepared; owner review gate pending. The 10 approved MVP decisions are recorded in `docs/phase-1/requirements.md` and are treated as the locked Phase 1 baseline.
+
+Created:
+
+- `docs/phase-1/problem-statement.md` — Naval-focused problem framing, support/schedule/availability distinction, shared-resource conflict risk, and data-quality guardrails.
+- `docs/phase-1/objectives-and-scope.md` — General and measurable objectives, MVP in/out of scope, assumptions, and completion definition.
+- `docs/phase-1/parallel-distributed-justification.md` — Stateless candidate evaluation, Django/FastAPI boundary, local versus multi-machine distinction, and honest benchmark caveats.
+- `docs/phase-1/roles-and-deliverables.md` — Gilland's sole software engineering role, co-members' manuscript focus, and Phase 0-8 deliverable roadmap to the November 19-20, 2026 defense window.
+- `docs/phase-1/requirements.md` — Functional/non-functional requirements, grouped acceptance criteria, ten approved decisions, and Phase 2 design questions.
+- `docs/phase-1/court-data-collection-template.csv` — Survey fields plus provenance flags and two explicitly synthetic examples with no fabricated coordinates or real location claims.
+
+No Phase 1 file has been staged or committed. `requirements.in` and `requirements.txt` were left unchanged. No Django/FastAPI application, database, role, migration, or booking feature was created.
+
+### Approved MVP decisions locked in Phase 1
+
+1. Real facility data must be verified; synthetic demo records must be unmistakably labeled and never mapped as real.
+2. A facility is normalized across sports; bookings conflict on the shared physical resource across sports.
+3. Mode A uses multi-sport OR matching by default and optional ALL matching; Mode B distinguishes sport support, schedule, and actual availability.
+4. Slots are fixed one-hour whole-hour intervals in `Asia/Manila`, half-open, and cannot cross midnight.
+5. Server-calculated `Decimal` flat hourly slot rate uses FacilitySport with facility-default fallback and immutable booking snapshots.
+6. Participant count is an integer of at least one, checked against known capacity, and does not multiply slot price.
+7. Booking statuses are `CONFIRMED` and `CANCELLED`; cancellation preserves history; admin changes affecting confirmed bookings must warn/block.
+8. Public browse/search is unauthenticated; booking, own-booking view, and cancellation use Django session authentication; administration is protected server-side.
+9. Weekly Monday-Sunday sport schedules may have effective bounds; date/time facility closures override them.
+10. Django/PostgreSQL owns booking writes; separate FastAPI HTTP service evaluates availability; serial and Windows-safe process-pool outputs are compared and benchmarked honestly. Gilland owns system engineering and co-members focus on the academic manuscript.
 
 ## Phase 0.5 — Environment Bootstrap
 
