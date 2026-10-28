@@ -9,9 +9,10 @@
   - `.venv` (Python 3.13.9, pip 25.2) created and verified (`pip check` passed with no broken requirements).
   - Local PostgreSQL 18.6 authentication (`psql.exe`) and Python driver connectivity (`psycopg` 3.3.6) verified via read-only `SELECT version();` checks. `pgAdmin 4` is also accessible locally.
 - **Phase 1 — Requirements and planning:** Completed and committed as `28a14dc23e88cd84e2d9088b8563069c1867ce61` (`Complete Phase 1 project planning, requirements, and MVP scope`).
-- **Phase 2 — System framework and technical design:** Seven design documents created in `docs/phase-2/`; pending owner/adviser review and commit.
-- **Next recommended task:** Review and approve the Phase 2 design documents and instructor checklist, then prepare to transition to **Phase 3 — Core functional application** (Django backend and database models).
-- **Scope boundary preserved:** No project database, project role, Django/FastAPI application code, migration, or application demo/seed record has been created yet. The Phase 1 CSV contains only explicitly synthetic template examples.
+- **Phase 2 — System framework and technical design:** Completed and committed as `099510b1babb979cdfaad43c28750498b0b43a26`.
+- **Phase 3 — Core functional application:** Started. Django project/apps, PostgreSQL environment configuration, core models/admin, and initial migrations generated; database migrations have not been applied.
+- **Next recommended task:** Manually enter the authorized PostgreSQL password in the ignored root `.env`, then review the Phase 3 models and generated migrations before a separately approved `migrate` operation.
+- **Scope boundary preserved:** No project database objects or roles were created, no migrations were applied, and no booking views/API or FastAPI app have been implemented. The Phase 1 CSV contains only explicitly synthetic template examples.
 
 ## Phase 1 — Requirements and planning
 
@@ -26,7 +27,7 @@ Created:
 - `docs/phase-1/requirements.md` — Functional/non-functional requirements, grouped acceptance criteria, ten approved decisions, and Phase 2 design questions.
 - `docs/phase-1/court-data-collection-template.csv` — Survey fields plus provenance flags and two explicitly synthetic examples with no fabricated coordinates or real location claims.
 
-The Phase 1 documents are committed. `requirements.in` and `requirements.txt` remain unchanged. No Django/FastAPI application, database, role, migration, or booking feature has been created.
+The Phase 1 documents are committed. `requirements.in` and `requirements.txt` remain unchanged from Phase 0.5. Django scaffolding and generated migration files were added in Phase 3; no database, role, migration application, or booking feature has been created.
 
 ### Approved MVP decisions locked in Phase 1
 
@@ -43,7 +44,7 @@ The Phase 1 documents are committed. `requirements.in` and `requirements.txt` re
 
 ## Phase 2 — System framework and technical design
 
-**Status:** Seven technical design documents prepared; owner/instructor review gate pending. Phase 1 was committed before Phase 2 work began.
+**Status:** Completed and committed as `099510b1babb979cdfaad43c28750498b0b43a26`. Phase 1 was committed before Phase 2 work began.
 
 Created:
 
@@ -55,7 +56,7 @@ Created:
 - `docs/phase-2/testing-and-benchmark-plan.md` — Unit, API, PostgreSQL concurrency, Windows process-pool test matrix, and honest median/speedup/IPC benchmark methodology.
 - `docs/phase-2/instructor-review-checklist.md` — Adviser review decisions, readiness criteria, and academic rationale.
 
-Phase 1 and Phase 2 reflect the 10 approved MVP decisions. Phase 2 files are not staged or committed. No application code, database/schema, role, migration, booking feature, or dependency change was created.
+Phase 1 and Phase 2 reflect the 10 approved MVP decisions. Phase 2 documentation remains committed as recorded above; the subsequent Phase 3 scaffolding and dependency update are currently unstaged. The Phase 3 migration files are generated but unapplied, and no database objects or roles were created.
 
 ### Phase 2 design decisions and open review items
 
@@ -64,6 +65,21 @@ Phase 1 and Phase 2 reflect the 10 approved MVP decisions. Phase 2 files are not
 - Proposed safe admin policy blocks schedule/closure edits that invalidate confirmed bookings until resolved; rate edits warn and never rewrite stored booking snapshots.
 - FastAPI receives only bounded serializable candidate data, without user PII or booking-write capability. Search results are advisory; Django rechecks authoritatively.
 - The design contains API/schema examples and a logical ERD only. None are implemented or validated against a running application.
+
+## Phase 3 — Core functional application (Part 1: Django scaffolding and models)
+
+**Status:** Scaffolding, environment configuration, models/admin registration, and initial `makemigrations` completed on 2026-10-29. No database migration was applied.
+
+- Generated `backend/config/`, `backend/facilities/`, and `backend/bookings/` with Django 5.2.18.
+- Added root `.env.example` with placeholder configuration and root `.env` with the same keys; `DB_PASSWORD` is blank for the owner to fill locally. `.env` is ignored by Git. The secret key in both files is an explicit placeholder, not a production secret.
+- Configured `python-dotenv` to load the root `.env`, PostgreSQL connection settings from `DB_*`, `Asia/Manila`, `USE_TZ=True`, and `rest_framework`, `facilities`, and `bookings`.
+- Added the Phase 2 facilities/domain models, supporting `FacilityOperatingHours` and `ResourceSport` relations, provenance/rate-fallback fields, and booking snapshots. `Facility.is_demo_data` defaults to `True`; no facility/demo records were created.
+- Registered the facility, schedule, closure, resource, sport, and booking models in Django Admin.
+- Added pinned `python-dotenv==1.2.4` as a direct requirement and regenerated/installed the hash-locked dependency file.
+- `makemigrations` generated `backend/facilities/migrations/0001_initial.py` and `backend/bookings/migrations/0001_initial.py`. It exited successfully, but warned that PostgreSQL migration history could not be checked because the password is blank (`fe_sendauth: no password supplied`).
+- `manage.py check` passed with no issues. `makemigrations --check --dry-run` reported no changes pending; it emitted the same expected connection warning. `pip check` reported no broken requirements.
+- **Not run:** `manage.py migrate`; database schema/object changes; `createsuperuser`; booking views/API or business workflows; FastAPI application.
+- **Manual action:** Enter the PostgreSQL password locally in `.env` without pasting it into chat. After review and approval, verify login and run the separately approved migration step.
 
 ## Phase 0.5 — Environment Bootstrap
 
