@@ -1,0 +1,38 @@
+# Python environments and generated files
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+
+# Test, type-check, and coverage caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+
+# Local databases, scratch data, logs, editor state, and OS metadata
+*.sqlite3
+local_data/
+/data/private/
+*.log
+.idea/
+Thumbs.db
+Desktop.ini
+.DS_Store

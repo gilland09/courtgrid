@@ -1,0 +1,13 @@
+# Application and test dependencies. Keep direct dependencies pinned and review
+# updates before regenerating requirements.txt.
+Django==5.2.18
+djangorestframework==3.18.3
+fastapi==0.162.0
+psycopg[binary]==3.3.6
+pytest==9.2.0
+pytest-django==4.14.0
+requests==2.34.2
+uvicorn[standard]==0.54.0
+
+# Lock-generation tool; pinned so the generated lock can be reproduced.
+pip-tools==7.6.2
