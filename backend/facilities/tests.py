@@ -1,8 +1,22 @@
+from datetime import datetime, time, timedelta
 from decimal import Decimal
 
+from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from .models import BookableResource, Facility, FacilitySport, Sport
+from bookings.models import Booking
+
+from .models import (
+    BookableResource,
+    Facility,
+    FacilityClosure,
+    FacilityOperatingHours,
+    FacilitySport,
+    ResourceSport,
+    Sport,
+    SportSchedule,
+)
 from .serializers import FacilitySportSerializer
 
 
@@ -168,3 +182,106 @@ class FacilityDiscoveryAPITests(APITestCase):
 
         self.assertEqual(serialized['sport']['slug'], 'basketball')
         self.assertEqual(serialized['hourly_rate'], '250.00')
+
+
+class SerialAvailabilityAPITests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.sport = Sport.objects.create(name='Basketball', slug='basketball')
+        cls.facility = Facility.objects.create(
+            name='Synthetic Availability Facility',
+            default_hourly_rate='200.00',
+        )
+        cls.facility_sport = FacilitySport.objects.create(
+            facility=cls.facility,
+            sport=cls.sport,
+            hourly_rate='175.00',
+        )
+        cls.resource = BookableResource.objects.create(
+            facility=cls.facility,
+            name='Test Court',
+        )
+        ResourceSport.objects.create(
+            resource=cls.resource,
+            facility_sport=cls.facility_sport,
+        )
+        cls.search_date = timezone.localdate() + timedelta(days=1)
+        FacilityOperatingHours.objects.create(
+            facility=cls.facility,
+            day_of_week=cls.search_date.weekday(),
+            start_time=time(8),
+            end_time=time(17),
+        )
+        SportSchedule.objects.create(
+            facility_sport=cls.facility_sport,
+            day_of_week=cls.search_date.weekday(),
+            start_time=time(9),
+            end_time=time(12),
+        )
+        local_midnight = timezone.make_aware(
+            datetime.combine(cls.search_date, time.min)
+        )
+        cls.booked_start = local_midnight + timedelta(hours=9)
+        cls.closure_start = local_midnight + timedelta(hours=10, minutes=30)
+        cls.user = get_user_model().objects.create_user(username='availability-test')
+        Booking.objects.create(
+            user=cls.user,
+            resource=cls.resource,
+            sport=cls.sport,
+            start_datetime=cls.booked_start,
+            end_datetime=cls.booked_start + timedelta(hours=1),
+            participant_count=2,
+            status=Booking.Status.CONFIRMED,
+            rate_snapshot='175.00',
+            total_price='175.00',
+        )
+        FacilityClosure.objects.create(
+            facility=cls.facility,
+            resource=cls.resource,
+            start_datetime=cls.closure_start,
+            end_datetime=cls.closure_start + timedelta(minutes=30),
+            reason='Temporary resource maintenance',
+        )
+
+    def test_search_excludes_booked_closed_and_unscheduled_slots(self):
+        response = self.client.get(
+            '/api/availability/search',
+            {
+                'date': self.search_date.isoformat(),
+                'sport': self.sport.slug,
+                'facility': self.facility.pk,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['timezone'], 'Asia/Manila')
+        slots = response.data['results']
+        self.assertEqual(len(slots), 1)
+        self.assertEqual(slots[0]['facility_id'], self.facility.pk)
+        self.assertEqual(slots[0]['resource_id'], self.resource.pk)
+        self.assertEqual(slots[0]['sport_id'], self.sport.pk)
+        self.assertEqual(
+            slots[0]['start_datetime'],
+            timezone.make_aware(
+                datetime.combine(self.search_date, time(11))
+            ),
+        )
+        self.assertEqual(
+            slots[0]['end_datetime'],
+            timezone.make_aware(
+                datetime.combine(self.search_date, time(12))
+            ),
+        )
+
+    def test_search_rejects_invalid_date_and_unknown_sport(self):
+        invalid_date = self.client.get(
+            '/api/availability/search',
+            {'date': 'not-a-date'},
+        )
+        unknown_sport = self.client.get(
+            '/api/availability/search',
+            {'date': self.search_date.isoformat(), 'sport': 'not-a-sport'},
+        )
+
+        self.assertEqual(invalid_date.status_code, 400)
+        self.assertEqual(unknown_sport.status_code, 400)

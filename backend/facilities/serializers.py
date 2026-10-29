@@ -23,6 +23,12 @@ class FacilitySportSerializer(serializers.ModelSerializer):
         fields = ('sport', 'hourly_rate')
 
 
+class AvailabilitySearchSerializer(serializers.Serializer):
+    date = serializers.DateField()
+    sport = serializers.CharField(required=False, allow_blank=False)
+    facility = serializers.IntegerField(required=False, min_value=1)
+
+
 class FacilitySerializer(serializers.ModelSerializer):
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()

@@ -10,9 +10,9 @@
   - Local PostgreSQL 18.6 authentication (`psql.exe`) and Python driver connectivity (`psycopg` 3.3.6) verified via read-only `SELECT version();` checks. `pgAdmin 4` is also accessible locally.
 - **Phase 1 — Requirements and planning:** Completed and committed as `28a14dc23e88cd84e2d9088b8563069c1867ce61` (`Complete Phase 1 project planning, requirements, and MVP scope`).
 - **Phase 2 — System framework and technical design:** Completed and committed as `099510b1babb979cdfaad43c28750498b0b43a26`.
-- **Phase 3 — Core functional application:** In progress. Parts 1 and 2 (Django scaffold/models and Mode A discovery API) are committed; the owner reports that migrations were applied and a superuser created. Part 3 (booking API and transactional resource locks) is implemented and awaiting review/commit.
-- **Next recommended task:** Review and commit Phase 3 Part 3, then implement Phase 3 Part 4 (schedule- and closure-aware local availability).
-- **Scope boundary preserved:** No FastAPI service or availability evaluation has been implemented yet. The Phase 1 CSV contains only explicitly synthetic template examples.
+- **Phase 3 — Core functional application:** 100% complete. Django scaffold/models, Mode A discovery, transactional booking API, schedule/closure enforcement, and serial Mode B availability baseline are implemented. The owner reports that migrations were applied and a superuser created.
+- **Next recommended task:** Begin **Phase 4 — Parallel and Distributed Implementation**, starting with the separate FastAPI availability service.
+- **Scope boundary preserved:** No FastAPI service or `ProcessPoolExecutor` implementation has been added; the serial evaluator is the Django correctness baseline. The Phase 1 CSV contains only explicitly synthetic template examples.
 
 ## Phase 1 — Requirements and planning
 
@@ -56,12 +56,12 @@ Created:
 - `docs/phase-2/testing-and-benchmark-plan.md` — Unit, API, PostgreSQL concurrency, Windows process-pool test matrix, and honest median/speedup/IPC benchmark methodology.
 - `docs/phase-2/instructor-review-checklist.md` — Adviser review decisions, readiness criteria, and academic rationale.
 
-Phase 1 and Phase 2 reflect the 10 approved MVP decisions. The Phase 3 source changes currently under review are not staged. Per the owner, the initial migrations were applied manually; no application database rows were created by these implementation changes.
+Phase 1 and Phase 2 reflect the 10 approved MVP decisions. Parts 1-3 are committed; Phase 3 Part 4 changes are currently under review and unstaged. Per the owner, the initial migrations were applied manually; no application database rows were created by these implementation changes.
 
 ### Phase 2 design decisions and open review items
 
 - Primary booking guard implemented in Phase 3 Part 3: lock the existing `BookableResource` row with `select_for_update()` inside a PostgreSQL transaction, then re-read active facility/sport/resource associations and overlapping confirmed bookings before insertion. All booking writers must follow the same protocol; a PostgreSQL exclusion constraint remains optional defense in depth.
-- Resource-specific sport schedules are designed to take precedence for their scoped resource/effective period over the FacilitySport-wide schedule. Confirm this precedence before implementing schedule evaluation.
+- The implemented schedule rule uses resource-specific sport schedules for their applicable weekday/effective-date scope; the FacilitySport-wide schedule is the fallback when no applicable resource-specific schedule exists.
 - Proposed safe admin policy blocks schedule/closure edits that invalidate confirmed bookings until resolved; rate edits warn and never rewrite stored booking snapshots.
 - FastAPI receives only bounded serializable candidate data, without user PII or booking-write capability. Search results are advisory; Django rechecks authoritatively.
 - The design contains API/schema examples and a logical ERD only. None are implemented or validated against a running application.
@@ -91,7 +91,7 @@ Phase 1 and Phase 2 reflect the 10 approved MVP decisions. The Phase 3 source ch
 
 ### Part 3 — Booking API and transactional resource locks
 
-**Status:** Implemented on 2026-10-29; awaiting owner review and commit.
+**Status:** Committed as `3bedbe4` (transactional booking API and row-level concurrency locks).
 
 - Added read and create serializers. Creation validates future timezone-aware slots, whole-hour alignment, exactly one hour, same local calendar day, participant capacity, active sport/facility/resource association, and a configured rate.
 - Added authenticated booking list/detail endpoints scoped to the requesting user, booking creation, and cancellation of the user's own not-yet-started confirmed booking. Other users' bookings return `404`.
@@ -99,8 +99,18 @@ Phase 1 and Phase 2 reflect the 10 approved MVP decisions. The Phase 3 source ch
 - The server selects the `FacilitySport` hourly rate with the approved facility-default fallback and stores the rate/total snapshot; request-supplied prices are ignored.
 - Overlapping confirmed bookings return HTTP `409`; cancelled bookings remain in history and no longer block a slot.
 - Added tests for server-calculated pricing, cross-sport resource conflicts, adjacent slots, invalid duration, resource/sport eligibility, own-booking cancellation and privacy, user-scoped listing, and concurrent duplicate requests.
-- **Not implemented:** schedule/closure checks during booking creation, local availability search, or the FastAPI service. Schedule and closure validation is the next part.
-- **Next:** Phase 3 Part 4 — integration of schedules and closures into local availability and booking validation.
+- **Not implemented:** schedule/closure checks during booking creation, local availability search, or the FastAPI service.
+
+### Part 4 — Schedules, closures, and serial availability
+
+**Status:** Implemented on 2026-10-29; awaiting owner review and commit. **Phase 3 is 100% complete.**
+
+- Added shared Django availability rules anchored to `Asia/Manila`: timezone-aware weekday/date evaluation, effective schedule date bounds, resource-specific schedule precedence over the facility/sport-wide schedule, facility operating hours, facility/resource closure overlap, and confirmed-booking overlap.
+- Booking creation checks operating hours, sport schedules, and closures before locking for early rejection and repeats those checks after acquiring the resource lock inside the transaction.
+- Added public `GET /api/availability/search` with required `date` and optional active `sport` (slug or ID) and `facility` ID filters. It evaluates each active resource/sport offering serially and returns only future one-hour available slots with facility/resource/sport IDs and timezone-aware boundaries.
+- Added booking rejection and availability tests for schedule windows/effective dates, resource closures, booked slots, unscheduled slots, filters, and invalid input.
+- **Not implemented:** FastAPI service, parallel processing, or distributed execution; these begin in Phase 4.
+- **Next:** Phase 4 — Parallel and Distributed Implementation, starting with FastAPI service setup.
 
 ## Phase 0.5 — Environment Bootstrap
 

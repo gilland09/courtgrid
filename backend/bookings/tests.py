@@ -10,10 +10,13 @@ from rest_framework.test import APIClient
 
 from facilities.models import (
     BookableResource,
+    FacilityClosure,
     Facility,
+    FacilityOperatingHours,
     FacilitySport,
     ResourceSport,
     Sport,
+    SportSchedule,
 )
 
 from .models import Booking
@@ -52,10 +55,20 @@ class BookingAPITests(TransactionTestCase):
             resource=self.resource,
             facility_sport=self.facility_sport,
         )
-        self.start_datetime = (
-            timezone.localtime()
-            .replace(minute=0, second=0, microsecond=0)
-            + timedelta(hours=2)
+        self.start_datetime = timezone.make_aware(
+            datetime.combine(timezone.localdate() + timedelta(days=1), time(hour=10))
+        )
+        FacilityOperatingHours.objects.create(
+            facility=self.facility,
+            day_of_week=self.start_datetime.weekday(),
+            start_time=time(0),
+            end_time=time(23, 59),
+        )
+        self.sport_schedule = SportSchedule.objects.create(
+            facility_sport=self.facility_sport,
+            day_of_week=self.start_datetime.weekday(),
+            start_time=time(0),
+            end_time=time(23, 59),
         )
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
@@ -111,6 +124,12 @@ class BookingAPITests(TransactionTestCase):
         ResourceSport.objects.create(
             resource=self.resource,
             facility_sport=pickleball_offering,
+        )
+        SportSchedule.objects.create(
+            facility_sport=pickleball_offering,
+            day_of_week=self.start_datetime.weekday(),
+            start_time=time(0),
+            end_time=time(23, 59),
         )
 
         conflict = self.create_booking(sport_id=pickleball.pk)
@@ -173,6 +192,46 @@ class BookingAPITests(TransactionTestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+        self.assertEqual(Booking.objects.count(), 0)
+
+    def test_booking_outside_resource_specific_sport_schedule_is_rejected(self):
+        SportSchedule.objects.create(
+            facility_sport=self.facility_sport,
+            resource=self.resource,
+            day_of_week=self.start_datetime.weekday(),
+            start_time=time(11),
+            end_time=time(12),
+        )
+
+        response = self.create_booking()
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('outside the sport schedule', str(response.data))
+        self.assertEqual(Booking.objects.count(), 0)
+
+    def test_booking_respects_schedule_effective_date_bounds(self):
+        self.sport_schedule.effective_from = self.start_datetime.date() + timedelta(days=1)
+        self.sport_schedule.save(update_fields=('effective_from',))
+
+        response = self.create_booking()
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('outside the sport schedule', str(response.data))
+        self.assertEqual(Booking.objects.count(), 0)
+
+    def test_booking_overlapping_resource_closure_is_rejected(self):
+        FacilityClosure.objects.create(
+            facility=self.facility,
+            resource=self.resource,
+            start_datetime=self.start_datetime + timedelta(minutes=30),
+            end_datetime=self.start_datetime + timedelta(hours=1),
+            reason='Scheduled maintenance',
+        )
+
+        response = self.create_booking()
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('closure', str(response.data))
         self.assertEqual(Booking.objects.count(), 0)
 
     def test_resource_must_be_configured_for_requested_sport(self):

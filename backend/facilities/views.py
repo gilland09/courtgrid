@@ -1,10 +1,25 @@
+from django.conf import settings
 from django.db.models import Count, Prefetch, Q
+from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import ListAPIView, RetrieveAPIView
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
+from .availability import (
+    APPLICATION_TIMEZONE,
+    active_resource_offerings,
+    active_resources_for_offering,
+    is_slot_available,
+    make_local_slot,
+)
 from .models import BookableResource, Facility, FacilitySport, Sport
-from .serializers import FacilitySerializer, SportSerializer
+from .serializers import (
+    AvailabilitySearchSerializer,
+    FacilitySerializer,
+    SportSerializer,
+)
 
 
 class FacilityDiscoveryQuerysetMixin:
@@ -94,3 +109,56 @@ class FacilityDetailView(FacilityDiscoveryQuerysetMixin, RetrieveAPIView):
 
     def get_queryset(self):
         return self.get_facility_queryset(apply_sport_filter=False)
+
+
+class AvailabilitySearchView(APIView):
+    permission_classes = (AllowAny,)
+
+    def get(self, request):
+        serializer = AvailabilitySearchSerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        search_date = serializer.validated_data['date']
+        facility_id = serializer.validated_data.get('facility')
+        sport_filter = None
+
+        sport_value = serializer.validated_data.get('sport')
+        if sport_value is not None:
+            sport_queryset = Sport.objects.filter(is_active=True)
+            if sport_value.isdecimal():
+                sport_filter = sport_queryset.filter(pk=int(sport_value)).first()
+            else:
+                sport_filter = sport_queryset.filter(slug=sport_value.strip().lower()).first()
+            if sport_filter is None:
+                raise ValidationError({'sport': 'No active sport matches this value.'})
+
+        offerings = active_resource_offerings(
+            facility_id=facility_id,
+            sport=sport_filter,
+        )
+        current_time = timezone.localtime(timezone.now(), APPLICATION_TIMEZONE)
+        results = []
+        for facility_sport in offerings:
+            for resource in active_resources_for_offering(facility_sport):
+                for hour in range(24):
+                    start_datetime, end_datetime = make_local_slot(search_date, hour)
+                    if start_datetime <= current_time:
+                        continue
+                    if not is_slot_available(
+                        resource,
+                        facility_sport,
+                        start_datetime,
+                        end_datetime,
+                    ):
+                        continue
+                    results.append({
+                        'facility_id': facility_sport.facility_id,
+                        'resource_id': resource.pk,
+                        'sport_id': facility_sport.sport_id,
+                        'start_datetime': start_datetime,
+                        'end_datetime': end_datetime,
+                    })
+
+        return Response({
+            'timezone': settings.TIME_ZONE,
+            'results': results,
+        })

@@ -7,6 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from facilities.availability import slot_unavailability_reason
 from facilities.models import BookableResource, FacilitySport, ResourceSport
 
 from .models import Booking
@@ -44,10 +45,37 @@ class MyBookingDetailView(RetrieveAPIView):
 class BookingCreateView(APIView):
     permission_classes = (IsAuthenticated,)
 
+    @staticmethod
+    def validate_schedule_and_closures(resource, facility_sport, start_datetime, end_datetime):
+        reason = slot_unavailability_reason(
+            resource,
+            facility_sport,
+            start_datetime,
+            end_datetime,
+        )
+        if reason is not None:
+            raise ValidationError({'start_datetime': reason})
+
     def post(self, request):
         serializer = CreateBookingSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         requested = serializer.validated_data
+
+        initial_facility_sport = FacilitySport.objects.filter(
+            facility=requested['resource'].facility,
+            sport=requested['sport'],
+            is_active=True,
+        ).first()
+        if initial_facility_sport is None:
+            raise ValidationError({
+                'sport_id': 'This facility does not currently support the requested sport.'
+            })
+        self.validate_schedule_and_closures(
+            requested['resource'],
+            initial_facility_sport,
+            requested['start_datetime'],
+            requested['end_datetime'],
+        )
 
         with transaction.atomic():
             try:
@@ -94,6 +122,13 @@ class BookingCreateView(APIView):
                 raise ValidationError({
                     'sport_id': 'This resource is not configured for the requested sport.'
                 })
+
+            self.validate_schedule_and_closures(
+                resource,
+                facility_sport,
+                requested['start_datetime'],
+                requested['end_datetime'],
+            )
 
             capacity = (
                 resource.capacity
