@@ -11,8 +11,9 @@
 - **Phase 1 — Requirements and planning:** Completed and committed as `28a14dc23e88cd84e2d9088b8563069c1867ce61` (`Complete Phase 1 project planning, requirements, and MVP scope`).
 - **Phase 2 — System framework and technical design:** Completed and committed as `099510b1babb979cdfaad43c28750498b0b43a26`.
 - **Phase 3 — Core functional application:** 100% complete. Django scaffold/models, Mode A discovery, transactional booking API, schedule/closure enforcement, and serial Mode B availability baseline are implemented. The owner reports that migrations were applied and a superuser created.
-- **Next recommended task:** Begin **Phase 4 — Parallel and Distributed Implementation**, starting with the separate FastAPI availability service.
-- **Scope boundary preserved:** No FastAPI service or `ProcessPoolExecutor` implementation has been added; the serial evaluator is the Django correctness baseline. The Phase 1 CSV contains only explicitly synthetic template examples.
+- **Phase 4 — Parallel and Distributed Implementation:** Started. A standalone FastAPI service, Pydantic HTTP schemas, a `ProcessPoolExecutor` evaluator, and a Django HTTP client are implemented; end-to-end distributed testing and benchmarking remain.
+- **Next recommended task:** Phase 4 Part 2 — run Django and FastAPI as separate processes, verify the HTTP request/response path, and compare serial and parallel results and performance.
+- **Scope boundary preserved:** The Django serial evaluator remains unchanged as the correctness baseline. FastAPI performs candidate evaluation only and does not access PostgreSQL or modify bookings. The Phase 1 CSV contains only explicitly synthetic template examples.
 
 ## Phase 1 — Requirements and planning
 
@@ -56,7 +57,7 @@ Created:
 - `docs/phase-2/testing-and-benchmark-plan.md` — Unit, API, PostgreSQL concurrency, Windows process-pool test matrix, and honest median/speedup/IPC benchmark methodology.
 - `docs/phase-2/instructor-review-checklist.md` — Adviser review decisions, readiness criteria, and academic rationale.
 
-Phase 1 and Phase 2 reflect the 10 approved MVP decisions. Parts 1-3 are committed; Phase 3 Part 4 changes are currently under review and unstaged. Per the owner, the initial migrations were applied manually; no application database rows were created by these implementation changes.
+Phase 1 and Phase 2 reflect the 10 approved MVP decisions. Phase 3 Parts 1-4 are committed and complete. Phase 4 Part 1 changes are currently under review and unstaged. Per the owner, the initial migrations were applied manually; no application database rows were created by these implementation changes.
 
 ### Phase 2 design decisions and open review items
 
@@ -103,7 +104,7 @@ Phase 1 and Phase 2 reflect the 10 approved MVP decisions. Parts 1-3 are committ
 
 ### Part 4 — Schedules, closures, and serial availability
 
-**Status:** Implemented on 2026-10-29; awaiting owner review and commit. **Phase 3 is 100% complete.**
+**Status:** Committed as `eb9d1ab` (serial availability and schedule/closure enforcement). **Phase 3 is 100% complete.**
 
 - Added shared Django availability rules anchored to `Asia/Manila`: timezone-aware weekday/date evaluation, effective schedule date bounds, resource-specific schedule precedence over the facility/sport-wide schedule, facility operating hours, facility/resource closure overlap, and confirmed-booking overlap.
 - Booking creation checks operating hours, sport schedules, and closures before locking for early rejection and repeats those checks after acquiring the resource lock inside the transaction.
@@ -111,6 +112,20 @@ Phase 1 and Phase 2 reflect the 10 approved MVP decisions. Parts 1-3 are committ
 - Added booking rejection and availability tests for schedule windows/effective dates, resource closures, booked slots, unscheduled slots, filters, and invalid input.
 - **Not implemented:** FastAPI service, parallel processing, or distributed execution; these begin in Phase 4.
 - **Next:** Phase 4 — Parallel and Distributed Implementation, starting with FastAPI service setup.
+
+## Phase 4 — Parallel and Distributed Implementation
+
+### Part 1 — FastAPI service and parallel evaluator foundation
+
+**Status:** Implemented on 2026-10-29; awaiting owner review and commit.
+
+- Added the standalone `availability_service/app` package with a FastAPI application exposing `POST /availability/search`.
+- Added strict Pydantic request/response schemas for facilities/resources, operating hours, sport schedules, closures, confirmed booking intervals, available slots, and parallel elapsed time. Datetimes at the service boundary require timezone offsets.
+- Added a top-level, picklable pure worker and a `ProcessPoolExecutor` manager. It evaluates facility candidates using primitive JSON-compatible dictionaries, `Asia/Manila`, operating hours, effective sport schedules, closure intervals, and existing booking overlaps. Worker count is capped at four and no database objects/connections are passed to workers.
+- Added a Django client that serializes model/queryset inputs into JSON-safe dictionaries and posts to `FASTAPI_URL` (default `http://127.0.0.1:8001`) with bounded timeouts. Connection, timeout, HTTP, JSON, and response-shape failures raise an explicit `AvailabilityServiceError`; the serial Django availability endpoint is not replaced.
+- Added service evaluator/schema/endpoint tests and Django HTTP-client serialization/error tests.
+- **Not implemented:** E2E testing with both services running or formal serial-versus-parallel benchmarking.
+- **Next:** Phase 4 Part 2 — distributed HTTP integration testing and serial/parallel equivalence/performance benchmarks.
 
 ## Phase 0.5 — Environment Bootstrap
 
