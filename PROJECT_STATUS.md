@@ -11,8 +11,8 @@
 - **Phase 1 — Requirements and planning:** Completed and committed as `28a14dc23e88cd84e2d9088b8563069c1867ce61` (`Complete Phase 1 project planning, requirements, and MVP scope`).
 - **Phase 2 — System framework and technical design:** Completed and committed as `099510b1babb979cdfaad43c28750498b0b43a26`.
 - **Phase 3 — Core functional application:** 100% complete. Django scaffold/models, Mode A discovery, transactional booking API, schedule/closure enforcement, and serial Mode B availability baseline are implemented. The owner reports that migrations were applied and a superuser created.
-- **Phase 4 — Parallel and Distributed Implementation:** Started. A standalone FastAPI service, Pydantic HTTP schemas, a `ProcessPoolExecutor` evaluator, and a Django HTTP client are implemented; end-to-end distributed testing and benchmarking remain.
-- **Next recommended task:** Phase 4 Part 2 — run Django and FastAPI as separate processes, verify the HTTP request/response path, and compare serial and parallel results and performance.
+- **Phase 4 — Parallel and Distributed Implementation:** 100% complete. Django can route availability requests between the serial evaluator and FastAPI over HTTP; the serial and parallel result sets were verified equal in a live 10-iteration benchmark.
+- **Next recommended task:** Begin **Phase 5 — Integration and Testing**, expanding end-to-end, concurrency, and operational validation.
 - **Scope boundary preserved:** The Django serial evaluator remains unchanged as the correctness baseline. FastAPI performs candidate evaluation only and does not access PostgreSQL or modify bookings. The Phase 1 CSV contains only explicitly synthetic template examples.
 
 ## Phase 1 — Requirements and planning
@@ -117,15 +117,25 @@ Phase 1 and Phase 2 reflect the 10 approved MVP decisions. Phase 3 Parts 1-4 are
 
 ### Part 1 — FastAPI service and parallel evaluator foundation
 
-**Status:** Implemented on 2026-10-29; awaiting owner review and commit.
+**Status:** Committed as `c5e8c57` (FastAPI service and ProcessPoolExecutor foundation).
 
 - Added the standalone `availability_service/app` package with a FastAPI application exposing `POST /availability/search`.
 - Added strict Pydantic request/response schemas for facilities/resources, operating hours, sport schedules, closures, confirmed booking intervals, available slots, and parallel elapsed time. Datetimes at the service boundary require timezone offsets.
 - Added a top-level, picklable pure worker and a `ProcessPoolExecutor` manager. It evaluates facility candidates using primitive JSON-compatible dictionaries, `Asia/Manila`, operating hours, effective sport schedules, closure intervals, and existing booking overlaps. Worker count is capped at four and no database objects/connections are passed to workers.
 - Added a Django client that serializes model/queryset inputs into JSON-safe dictionaries and posts to `FASTAPI_URL` (default `http://127.0.0.1:8001`) with bounded timeouts. Connection, timeout, HTTP, JSON, and response-shape failures raise an explicit `AvailabilityServiceError`; the serial Django availability endpoint is not replaced.
 - Added service evaluator/schema/endpoint tests and Django HTTP-client serialization/error tests.
-- **Not implemented:** E2E testing with both services running or formal serial-versus-parallel benchmarking.
-- **Next:** Phase 4 Part 2 — distributed HTTP integration testing and serial/parallel equivalence/performance benchmarks.
+- The standalone evaluator/schema tests and Django HTTP-client serialization/error tests passed.
+
+### Part 2 — Distributed integration and testing
+
+**Status:** Implemented and validated on 2026-11-02; awaiting owner review and commit. **Phase 4 is 100% complete.**
+
+- `GET /api/availability/search` now accepts `mode=serial|parallel` and defaults to `parallel`. Serial mode uses the existing Django evaluator; parallel mode serializes the date-scoped facilities, resources, schedules, closures, and confirmed bookings and calls FastAPI over HTTP.
+- Both paths return the same slot result shape. FastAPI timeout/service failures are logged as warnings and trigger an explicit serial fallback response.
+- Added Django tests for explicit serial output, mocked FastAPI HTTP success, exact equality with serial output, and a mocked `requests.Timeout` fallback.
+- Added `benchmarks/run_benchmark.py`, which creates 10 clearly synthetic facilities/resources with schedules and closures inside a transaction that is always rolled back. It runs 10 serial and 10 live HTTP-parallel iterations, compares result sets, and reports medians and speedup.
+- Live benchmark on this workstation: 70 available slots; serial median **1.548 s**, parallel HTTP median **0.542 s**, observed speedup **2.86x**. Serial and parallel result sets were identical; benchmark records were rolled back and zero synthetic benchmark facilities/sports remained afterward.
+- **Next:** Phase 5 — Integration and Testing.
 
 ## Phase 0.5 — Environment Bootstrap
 

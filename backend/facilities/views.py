@@ -1,3 +1,7 @@
+import logging
+from datetime import datetime, time, timedelta
+
+import requests
 from django.conf import settings
 from django.db.models import Count, Prefetch, Q
 from django.utils import timezone
@@ -10,16 +14,25 @@ from rest_framework.views import APIView
 from .availability import (
     APPLICATION_TIMEZONE,
     active_resource_offerings,
-    active_resources_for_offering,
-    is_slot_available,
-    make_local_slot,
+    evaluate_serial_availability,
 )
-from .models import BookableResource, Facility, FacilitySport, Sport
+from .availability_client import AvailabilityServiceError, fetch_parallel_availability
+from .models import (
+    BookableResource,
+    Facility,
+    FacilityClosure,
+    FacilitySport,
+    Sport,
+    SportSchedule,
+)
 from .serializers import (
     AvailabilitySearchSerializer,
     FacilitySerializer,
     SportSerializer,
 )
+from bookings.models import Booking
+
+logger = logging.getLogger(__name__)
 
 
 class FacilityDiscoveryQuerysetMixin:
@@ -135,30 +148,89 @@ class AvailabilitySearchView(APIView):
             facility_id=facility_id,
             sport=sport_filter,
         )
-        current_time = timezone.localtime(timezone.now(), APPLICATION_TIMEZONE)
-        results = []
-        for facility_sport in offerings:
-            for resource in active_resources_for_offering(facility_sport):
-                for hour in range(24):
-                    start_datetime, end_datetime = make_local_slot(search_date, hour)
-                    if start_datetime <= current_time:
-                        continue
-                    if not is_slot_available(
-                        resource,
-                        facility_sport,
-                        start_datetime,
-                        end_datetime,
-                    ):
-                        continue
-                    results.append({
-                        'facility_id': facility_sport.facility_id,
-                        'resource_id': resource.pk,
-                        'sport_id': facility_sport.sport_id,
-                        'start_datetime': start_datetime,
-                        'end_datetime': end_datetime,
-                    })
+        if serializer.validated_data['mode'] == 'serial':
+            results = evaluate_serial_availability(offerings, search_date)
+            return Response({
+                'timezone': settings.TIME_ZONE,
+                'mode': 'serial',
+                'results': results,
+            })
+
+        facility_ids = offerings.values_list('facility_id', flat=True).distinct()
+        facilities = list(Facility.objects.filter(
+            pk__in=facility_ids,
+            is_active=True,
+        ).order_by('pk'))
+        facility_sport_ids = offerings.values_list('pk', flat=True)
+        schedules = list(
+            SportSchedule.objects.filter(
+                facility_sport_id__in=facility_sport_ids,
+                day_of_week=search_date.weekday(),
+            ).filter(
+                Q(effective_from__isnull=True) | Q(effective_from__lte=search_date),
+                Q(effective_until__isnull=True) | Q(effective_until__gte=search_date),
+            ).select_related('facility_sport')
+        )
+        day_start = timezone.make_aware(
+            datetime.combine(search_date, time.min),
+            APPLICATION_TIMEZONE,
+        )
+        day_end = day_start + timedelta(days=1)
+        closures = list(
+            FacilityClosure.objects.filter(
+                facility_id__in=facility_ids,
+                start_datetime__lt=day_end,
+                end_datetime__gt=day_start,
+            ).select_related('facility', 'resource')
+        )
+        resource_ids = BookableResource.objects.filter(
+            facility_id__in=facility_ids,
+            is_active=True,
+            resource_sports__facility_sport_id__in=facility_sport_ids,
+        ).values_list('pk', flat=True).distinct()
+        existing_bookings = list(
+            Booking.objects.filter(
+                resource_id__in=resource_ids,
+                status=Booking.Status.CONFIRMED,
+                start_datetime__lt=day_end,
+                end_datetime__gt=day_start,
+            ).select_related('resource')
+        )
+        try:
+            service_response = fetch_parallel_availability(
+                target_date=search_date,
+                facilities=facilities,
+                closures=closures,
+                schedules=schedules,
+                existing_bookings=existing_bookings,
+            )
+        except (AvailabilityServiceError, requests.Timeout) as exc:
+            logger.warning(
+                'FastAPI availability service failed; falling back to serial evaluation: %s',
+                exc,
+            )
+            results = evaluate_serial_availability(offerings, search_date)
+            return Response({
+                'timezone': settings.TIME_ZONE,
+                'mode': 'serial',
+                'requested_mode': 'parallel',
+                'fallback': True,
+                'results': results,
+            })
+
+        results = [
+            {
+                **slot,
+                'start_datetime': datetime.fromisoformat(slot['start_datetime']),
+                'end_datetime': datetime.fromisoformat(slot['end_datetime']),
+            }
+            for slot in service_response['available_slots']
+        ]
 
         return Response({
             'timezone': settings.TIME_ZONE,
+            'mode': 'parallel',
+            'fallback': False,
+            'parallel_elapsed_time': service_response['parallel_elapsed_time'],
             'results': results,
         })

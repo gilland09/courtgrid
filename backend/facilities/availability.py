@@ -1,4 +1,4 @@
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
@@ -138,3 +138,29 @@ def active_resources_for_offering(facility_sport):
         is_active=True,
         resource_sports__facility_sport=facility_sport,
     ).select_related('facility').distinct()
+
+
+def evaluate_serial_availability(offerings, target_date: date, evaluated_at=None):
+    evaluated_at = evaluated_at or timezone.now()
+    current_time = local_datetime(evaluated_at)
+    results = []
+    for facility_sport in offerings:
+        for resource in active_resources_for_offering(facility_sport):
+            for hour in range(24):
+                start_datetime, end_datetime = make_local_slot(target_date, hour)
+                if start_datetime <= current_time:
+                    continue
+                if is_slot_available(
+                    resource,
+                    facility_sport,
+                    start_datetime,
+                    end_datetime,
+                ):
+                    results.append({
+                        'facility_id': facility_sport.facility_id,
+                        'resource_id': resource.pk,
+                        'sport_id': facility_sport.sport_id,
+                        'start_datetime': start_datetime,
+                        'end_datetime': end_datetime,
+                    })
+    return results

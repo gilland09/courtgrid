@@ -1,6 +1,8 @@
 from datetime import datetime, time, timedelta
 from decimal import Decimal
+from unittest.mock import Mock, patch
 
+import requests
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework.test import APITestCase
@@ -250,6 +252,7 @@ class SerialAvailabilityAPITests(APITestCase):
                 'date': self.search_date.isoformat(),
                 'sport': self.sport.slug,
                 'facility': self.facility.pk,
+                'mode': 'serial',
             },
         )
 
@@ -273,10 +276,132 @@ class SerialAvailabilityAPITests(APITestCase):
             ),
         )
 
+    def test_explicit_serial_mode_returns_expected_available_slot(self):
+        response = self.client.get(
+            '/api/availability/search',
+            {
+                'date': self.search_date.isoformat(),
+                'sport': self.sport.slug,
+                'facility': self.facility.pk,
+                'mode': 'serial',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['mode'], 'serial')
+        self.assertEqual(len(response.data['results']), 1)
+        self.assertEqual(
+            response.data['results'][0]['start_datetime'],
+            timezone.make_aware(
+                datetime.combine(self.search_date, time(11))
+            ),
+        )
+
+    @patch('facilities.availability_client.requests.post')
+    def test_availability_mode_defaults_to_parallel(self, post):
+        post.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={
+                'available_slots': [],
+                'parallel_elapsed_time': 0.01,
+            }),
+        )
+
+        response = self.client.get(
+            '/api/availability/search',
+            {
+                'date': self.search_date.isoformat(),
+                'sport': self.sport.slug,
+                'facility': self.facility.pk,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['mode'], 'parallel')
+        self.assertFalse(response.data['fallback'])
+        post.assert_called_once()
+
+    @patch('facilities.availability_client.requests.post')
+    def test_parallel_mode_uses_fastapi_response(self, post):
+        serial_response = self.client.get(
+            '/api/availability/search',
+            {
+                'date': self.search_date.isoformat(),
+                'sport': self.sport.slug,
+                'facility': self.facility.pk,
+                'mode': 'serial',
+            },
+        )
+        self.assertEqual(serial_response.status_code, 200)
+        serial_slots = serial_response.data['results']
+        post.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={
+                'available_slots': [{
+                    'facility_id': self.facility.pk,
+                    'resource_id': self.resource.pk,
+                    'sport_id': self.sport.pk,
+                    'start_datetime': serial_slots[0]['start_datetime'].isoformat(),
+                    'end_datetime': serial_slots[0]['end_datetime'].isoformat(),
+                }],
+                'parallel_elapsed_time': 0.125,
+            }),
+        )
+
+        response = self.client.get(
+            '/api/availability/search',
+            {
+                'date': self.search_date.isoformat(),
+                'sport': self.sport.slug,
+                'facility': self.facility.pk,
+                'mode': 'parallel',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['mode'], 'parallel')
+        self.assertFalse(response.data['fallback'])
+        self.assertEqual(response.data['parallel_elapsed_time'], 0.125)
+        self.assertEqual(response.data['results'], serial_slots)
+        post.assert_called_once()
+        payload = post.call_args.kwargs['json']
+        self.assertEqual(payload['target_date'], self.search_date.isoformat())
+        self.assertEqual(payload['facilities'][0]['facility_id'], self.facility.pk)
+        self.assertEqual(payload['existing_bookings'][0]['resource_id'], self.resource.pk)
+
+    @patch(
+        'facilities.availability_client.requests.post',
+        side_effect=requests.Timeout('simulated timeout'),
+    )
+    def test_parallel_mode_falls_back_to_serial_on_timeout(self, post):
+        response = self.client.get(
+            '/api/availability/search',
+            {
+                'date': self.search_date.isoformat(),
+                'sport': self.sport.slug,
+                'facility': self.facility.pk,
+                'mode': 'parallel',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['mode'], 'serial')
+        self.assertEqual(response.data['requested_mode'], 'parallel')
+        self.assertTrue(response.data['fallback'])
+        self.assertEqual(len(response.data['results']), 1)
+        post.assert_called_once()
+
     def test_search_rejects_invalid_date_and_unknown_sport(self):
         invalid_date = self.client.get(
             '/api/availability/search',
             {'date': 'not-a-date'},
+        )
+        invalid_mode = self.client.get(
+            '/api/availability/search',
+            {
+                'date': self.search_date.isoformat(),
+                'mode': 'automatic',
+            },
         )
         unknown_sport = self.client.get(
             '/api/availability/search',
@@ -284,4 +409,5 @@ class SerialAvailabilityAPITests(APITestCase):
         )
 
         self.assertEqual(invalid_date.status_code, 400)
+        self.assertEqual(invalid_mode.status_code, 400)
         self.assertEqual(unknown_sport.status_code, 400)

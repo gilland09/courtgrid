@@ -27,6 +27,10 @@ class AvailabilitySearchSerializer(serializers.Serializer):
     date = serializers.DateField()
     sport = serializers.CharField(required=False, allow_blank=False)
     facility = serializers.IntegerField(required=False, min_value=1)
+    mode = serializers.ChoiceField(
+        choices=('serial', 'parallel'),
+        default='parallel',
+    )
 
 
 class FacilitySerializer(serializers.ModelSerializer):
