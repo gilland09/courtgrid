@@ -12,7 +12,8 @@
 - **Phase 2 — System framework and technical design:** Completed and committed as `099510b1babb979cdfaad43c28750498b0b43a26`.
 - **Phase 3 — Core functional application:** 100% complete. Django scaffold/models, Mode A discovery, transactional booking API, schedule/closure enforcement, and serial Mode B availability baseline are implemented. The owner reports that migrations were applied and a superuser created.
 - **Phase 4 — Parallel and Distributed Implementation:** 100% complete. Django can route availability requests between the serial evaluator and FastAPI over HTTP; the serial and parallel result sets were verified equal in a live 10-iteration benchmark.
-- **Next recommended task:** Begin **Phase 5 — Integration and Testing**, expanding end-to-end, concurrency, and operational validation.
+- **Phase 5 — Integration and Testing:** 100% complete. Formal testing and benchmark evidence are documented in `docs/phase-5/test-report.md` and `docs/phase-5/benchmark-report.md`.
+- **Next recommended task:** Begin **Phase 6 — Documentation and Evidence**, handing off to the documentation team.
 - **Scope boundary preserved:** The Django serial evaluator remains unchanged as the correctness baseline. FastAPI performs candidate evaluation only and does not access PostgreSQL or modify bookings. The Phase 1 CSV contains only explicitly synthetic template examples.
 
 ## Phase 1 — Requirements and planning
@@ -128,14 +129,31 @@ Phase 1 and Phase 2 reflect the 10 approved MVP decisions. Phase 3 Parts 1-4 are
 
 ### Part 2 — Distributed integration and testing
 
-**Status:** Implemented and validated on 2026-11-02; awaiting owner review and commit. **Phase 4 is 100% complete.**
+**Status:** Committed as `34df698` (end-to-end distributed integration and benchmarks). **Phase 4 is 100% complete.**
 
 - `GET /api/availability/search` now accepts `mode=serial|parallel` and defaults to `parallel`. Serial mode uses the existing Django evaluator; parallel mode serializes the date-scoped facilities, resources, schedules, closures, and confirmed bookings and calls FastAPI over HTTP.
 - Both paths return the same slot result shape. FastAPI timeout/service failures are logged as warnings and trigger an explicit serial fallback response.
 - Added Django tests for explicit serial output, mocked FastAPI HTTP success, exact equality with serial output, and a mocked `requests.Timeout` fallback.
 - Added `benchmarks/run_benchmark.py`, which creates 10 clearly synthetic facilities/resources with schedules and closures inside a transaction that is always rolled back. It runs 10 serial and 10 live HTTP-parallel iterations, compares result sets, and reports medians and speedup.
 - Live benchmark on this workstation: 70 available slots; serial median **1.548 s**, parallel HTTP median **0.542 s**, observed speedup **2.86x**. Serial and parallel result sets were identical; benchmark records were rolled back and zero synthetic benchmark facilities/sports remained afterward.
-- **Next:** Phase 5 — Integration and Testing.
+- **Next:** Phase 5 — Integration and Testing (completed; see evidence reports below).
+
+## Phase 5 — Integration and Testing
+
+**Status:** 100% complete. Formal test coverage and performance evidence have
+been generated in `docs/phase-5/`.
+
+- `docs/phase-5/test-report.md` documents the 33 Django tests and 5 FastAPI
+  evaluator tests, including discovery, booking, resource-level concurrency,
+  availability, HTTP integration, serialization, and fallback behavior. It
+  also identifies the missing dedicated over-capacity rejection test.
+- `docs/phase-5/benchmark-report.md` records the synthetic 10-facility,
+  10-resource, 70-available-slot benchmark, ten iterations per path, medians
+  of 1.548 seconds serial and 0.542 seconds parallel HTTP, and the measured
+  2.86x speedup. It states the measurement scope, methodology, result equality,
+  rollback-based cleanup, and limitations.
+- **Next:** Phase 6 — Documentation and Evidence, with the documentation-team
+  handoff.
 
 ## Phase 0.5 — Environment Bootstrap
 
