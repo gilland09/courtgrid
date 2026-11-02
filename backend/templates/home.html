@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block title %}Find Courts | Naval Court Booking{% endblock %}
 
@@ -23,6 +24,7 @@
         {% endfor %}
     </select>
     <div id="sports-filter-help" class="form-text">Selecting multiple sports will use OR matching by default.</div>
+    <button id="filter-facilities" type="button" class="btn btn-primary mt-2">Filter</button>
 </section>
 
 <section aria-labelledby="map-heading" class="mb-4">
@@ -38,4 +40,8 @@
         <p class="text-body-secondary">Facility results will appear here when discovery is connected to this page.</p>
     </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/discovery.js' %}"></script>
 {% endblock %}
