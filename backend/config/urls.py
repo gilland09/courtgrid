@@ -17,8 +17,19 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 
+from .views import (
+    admin_dashboard_view,
+    home_view,
+    login_view,
+    logout_view,
+)
+
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('', login_view, name='login'),
+    path('home/', home_view, name='home'),
+    path('admin-dashboard/', admin_dashboard_view, name='admin_dashboard'),
+    path('logout/', logout_view, name='logout'),
     path('api/', include('facilities.urls')),
     path('api/', include('bookings.urls')),
 ]

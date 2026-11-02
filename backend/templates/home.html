@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+
+{% block title %}Find Courts | Naval Court Booking{% endblock %}
+
+{% block content %}
+<section class="p-4 p-md-5 mb-4 bg-body-tertiary rounded-3">
+    <div class="container-fluid py-2">
+        <h1 class="display-6 fw-semibold">Find a sports facility in Naval</h1>
+        <p class="col-md-9 fs-5 mb-0">
+            Explore facilities and their supported sports. Facility details and map locations will be shown only when available and verified.
+        </p>
+    </div>
+</section>
+
+<section aria-labelledby="sports-filter-heading" class="mb-4">
+    <h2 id="sports-filter-heading" class="h4">Filter by sports</h2>
+    <label for="sports-filter" class="form-label">Choose one or more sports</label>
+    <select id="sports-filter" name="sports" class="form-select" multiple size="5" aria-describedby="sports-filter-help">
+        {% for sport in sports %}
+            <option value="{{ sport.slug }}">{{ sport.name }}</option>
+        {% empty %}
+            <option disabled>No active sports are listed yet</option>
+        {% endfor %}
+    </select>
+    <div id="sports-filter-help" class="form-text">Selecting multiple sports will use OR matching by default.</div>
+</section>
+
+<section aria-labelledby="map-heading" class="mb-4">
+    <h2 id="map-heading" class="h4">Facility map</h2>
+    <div id="map" class="facility-map rounded border" role="region" aria-label="Facility map">
+        <p class="text-body-secondary p-3 mb-0">The map will display verified facility locations when map integration is added.</p>
+    </div>
+</section>
+
+<section aria-labelledby="facility-list-heading">
+    <h2 id="facility-list-heading" class="h4">Facilities</h2>
+    <div id="facility-list" aria-live="polite">
+        <p class="text-body-secondary">Facility results will appear here when discovery is connected to this page.</p>
+    </div>
+</section>
+{% endblock %}

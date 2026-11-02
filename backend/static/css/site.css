@@ -1,0 +1,4 @@
+.facility-map {
+    min-height: 20rem;
+    background-color: var(--bs-tertiary-bg);
+}
