@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}My Bookings | CourtGrid{% endblock %}
+
+{% block content %}
+<header class="mb-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-end gap-3">
+        <div>
+            <p class="text-uppercase text-body-secondary small mb-1">Your account</p>
+            <h1 class="h2 mb-1">My Bookings</h1>
+            <p class="text-body-secondary mb-0">Your reservations, all in one place.</p>
+        </div>
+        <div id="booking-tabs" class="booking-tabs" role="tablist" aria-label="Filter bookings">
+            <button type="button" class="booking-tab is-active" data-booking-tab="upcoming" role="tab" aria-selected="true">Upcoming · <span data-booking-count="upcoming">0</span></button>
+            <button type="button" class="booking-tab" data-booking-tab="past" role="tab" aria-selected="false">Past · <span data-booking-count="past">0</span></button>
+        </div>
+    </div>
+</header>
+
+<form id="booking-csrf-form" class="d-none">{% csrf_token %}</form>
+<div id="bookings-container" aria-live="polite">
+    <p class="text-body-secondary">Loading your bookings...</p>
+</div>
+
+<div class="modal fade" id="cancel-booking-modal" tabindex="-1" aria-labelledby="cancel-booking-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <section class="modal-content booking-modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h2 class="modal-title h5" id="cancel-booking-title">Cancel this booking?</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p id="cancel-booking-summary" class="text-body-secondary"></p>
+                <div id="cancel-booking-result" aria-live="polite"></div>
+                <div class="d-flex gap-2 mt-3">
+                    <button type="button" class="btn btn-outline-secondary flex-fill" data-bs-dismiss="modal">Keep Booking</button>
+                    <button id="confirm-cancel-booking" type="button" class="btn btn-danger flex-fill">Cancel Booking</button>
+                </div>
+            </div>
+        </section>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/my_bookings.js' %}"></script> 
+{% endblock %}

@@ -4,6 +4,7 @@ from datetime import datetime, time, timedelta
 import requests
 from django.conf import settings
 from django.db.models import Count, Prefetch, Q
+from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import ListAPIView, RetrieveAPIView
@@ -21,6 +22,7 @@ from .models import (
     BookableResource,
     Facility,
     FacilityClosure,
+    FacilityOperatingHours,
     FacilitySport,
     Sport,
     SportSchedule,
@@ -30,7 +32,7 @@ from .serializers import (
     FacilitySerializer,
     SportSerializer,
 )
-from bookings.models import Booking
+from bookings.models import Booking, UserProfile
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +124,71 @@ class FacilityDetailView(FacilityDiscoveryQuerysetMixin, RetrieveAPIView):
 
     def get_queryset(self):
         return self.get_facility_queryset(apply_sport_filter=False)
+
+
+def facility_detail_view(request, pk):
+    facility = get_object_or_404(
+        Facility.objects.filter(is_active=True).prefetch_related(
+            Prefetch(
+                'facility_sports',
+                queryset=FacilitySport.objects.filter(
+                    is_active=True,
+                    sport__is_active=True,
+                ).select_related('sport'),
+                to_attr='active_facility_sports',
+            ),
+            Prefetch(
+                'operating_hours',
+                queryset=FacilityOperatingHours.objects.order_by(
+                    'day_of_week',
+                    'start_time',
+                ),
+                to_attr='ordered_operating_hours',
+            ),
+        ),
+        pk=pk,
+    )
+    active_resources = list(
+        facility.resources.filter(is_active=True).order_by('name')
+    )
+    facility_resources = [
+        {
+            'id': resource.pk,
+            'name': resource.name,
+            'capacity': (
+                resource.capacity
+                if resource.capacity is not None
+                else facility.capacity
+            ),
+        }
+        for resource in active_resources
+    ]
+    sport_rates = {}
+    for facility_sport in facility.active_facility_sports:
+        rate = facility_sport.hourly_rate
+        if rate is None:
+            rate = facility.default_hourly_rate
+        sport_rates[str(facility_sport.sport_id)] = (
+            str(rate) if rate is not None else None
+        )
+    phone_number = ''
+    if request.user.is_authenticated:
+        phone_number = (
+            UserProfile.objects.filter(user=request.user)
+            .values_list('phone_number', flat=True)
+            .first()
+            or ''
+        )
+    return render(request, 'facility_detail.html', {
+        'facility': facility,
+        'facility_sports': facility.active_facility_sports,
+        'operating_hours': facility.ordered_operating_hours,
+        'today': timezone.localdate().isoformat(),
+        'facility_resources': facility_resources,
+        'sport_rates': sport_rates,
+        'booker_email': request.user.email if request.user.is_authenticated else '',
+        'booker_phone': phone_number,
+    })
 
 
 class AvailabilitySearchView(APIView):

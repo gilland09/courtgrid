@@ -1,41 +1,78 @@
 {% extends 'base.html' %}
 
-{% block title %}Master Control Dashboard | Naval Court Booking{% endblock %}
+{% block title %}Master Control Dashboard | CourtGrid{% endblock %}
 
 {% block content %}
 <header class="mb-4">
     <p class="text-uppercase text-body-secondary small mb-1">Administration</p>
     <h1 class="h2">Master Control Dashboard</h1>
-    <p class="text-body-secondary">Manage facilities and review booking operations.</p>
+    <p class="text-body-secondary">Review today's bookings and currently active facility closures.</p>
+    <a href="/admin/" class="btn btn-primary hover-lift">Go to Database Management</a>
 </header>
 
-<div class="row g-3">
-    <div class="col-12 col-md-4">
-        <section class="card h-100">
-            <div class="card-body">
-                <h2 class="h5 card-title">Today's Bookings</h2>
-                <p class="card-text text-body-secondary">Booking summaries will appear here when dashboard reporting is connected.</p>
-                <a href="{% url 'admin:bookings_booking_changelist' %}" class="btn btn-outline-primary">Manage bookings</a>
-            </div>
-        </section>
+<section class="card hover-lift mb-4" aria-labelledby="today-bookings-heading">
+    <div class="card-body">
+        <h2 id="today-bookings-heading" class="h4">Today's Confirmed Bookings</h2>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th scope="col">Facility</th>
+                        <th scope="col">Resource</th>
+                        <th scope="col">Sport</th>
+                        <th scope="col">Start</th>
+                        <th scope="col">End</th>
+                        <th scope="col">Booked by</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for booking in todays_bookings %}
+                        <tr>
+                            <td>{{ booking.resource.facility.name }}</td>
+                            <td>{{ booking.resource.name }}</td>
+                            <td>{{ booking.sport.name }}</td>
+                            <td>{{ booking.start_datetime|date:"H:i" }}</td>
+                            <td>{{ booking.end_datetime|date:"H:i" }}</td>
+                            <td>{{ booking.user.get_username }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="6" class="text-body-secondary">No confirmed bookings today.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
-    <div class="col-12 col-md-4">
-        <section class="card h-100">
-            <div class="card-body">
-                <h2 class="h5 card-title">Active Closures</h2>
-                <p class="card-text text-body-secondary">Closure summaries will appear here when dashboard reporting is connected.</p>
-                <a href="{% url 'admin:facilities_facilityclosure_changelist' %}" class="btn btn-outline-primary">Manage closures</a>
-            </div>
-        </section>
+</section>
+
+<section class="card hover-lift mb-4" aria-labelledby="active-closures-heading">
+    <div class="card-body">
+        <h2 id="active-closures-heading" class="h4">Currently Active Closures</h2>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th scope="col">Facility</th>
+                        <th scope="col">Resource</th>
+                        <th scope="col">Reason</th>
+                        <th scope="col">Start</th>
+                        <th scope="col">End</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for closure in active_closures %}
+                        <tr>
+                            <td>{{ closure.facility.name }}</td>
+                            <td>{{ closure.resource.name|default:"All resources" }}</td>
+                            <td>{{ closure.reason }}</td>
+                            <td>{{ closure.start_datetime|date:"M j, Y H:i" }}</td>
+                            <td>{{ closure.end_datetime|date:"M j, Y H:i" }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="5" class="text-body-secondary">No active closures.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
-    <div class="col-12 col-md-4">
-        <section class="card h-100">
-            <div class="card-body">
-                <h2 class="h5 card-title">Facility Status</h2>
-                <p class="card-text text-body-secondary">Facility status summaries will appear here when dashboard reporting is connected.</p>
-                <a href="{% url 'admin:facilities_facility_changelist' %}" class="btn btn-outline-primary">Manage facilities</a>
-            </div>
-        </section>
-    </div>
-</div>
+</section>
 {% endblock %}

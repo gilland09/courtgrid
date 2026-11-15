@@ -2,11 +2,16 @@ from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib.auth import login as auth_login
 from django.contrib.auth import logout as auth_logout
+from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import AuthenticationForm
+from django.db import transaction
 from django.shortcuts import redirect, render
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from facilities.models import Sport
+from bookings.models import Booking
+from facilities.models import FacilityClosure, Sport
+from .forms import RegistrationForm
 
 
 def _dashboard_url(user):
@@ -26,6 +31,20 @@ def login_view(request):
     return render(request, 'login.html', {'form': form})
 
 
+def register_view(request):
+    if request.user.is_authenticated:
+        return redirect(_dashboard_url(request.user))
+
+    form = RegistrationForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        with transaction.atomic():
+            user = form.save()
+        auth_login(request, user)
+        return redirect('home')
+
+    return render(request, 'register.html', {'form': form})
+
+
 @require_POST
 def logout_view(request):
     auth_logout(request)
@@ -40,4 +59,30 @@ def home_view(request):
 
 @staff_member_required(login_url='login')
 def admin_dashboard_view(request):
-    return render(request, 'admin_dashboard.html')
+    now = timezone.now()
+    today = timezone.localtime(now).date()
+    todays_bookings = (
+        Booking.objects.filter(
+            status=Booking.Status.CONFIRMED,
+            start_datetime__date=today,
+        )
+        .select_related('user', 'resource__facility', 'sport')
+        .order_by('start_datetime')
+    )
+    active_closures = (
+        FacilityClosure.objects.filter(
+            start_datetime__lte=now,
+            end_datetime__gte=now,
+        )
+        .select_related('facility', 'resource')
+        .order_by('start_datetime')
+    )
+    return render(request, 'admin_dashboard.html', {
+        'todays_bookings': todays_bookings,
+        'active_closures': active_closures,
+    })
+
+
+@login_required(login_url='login')
+def my_bookings_view(request):
+    return render(request, 'my_bookings.html')

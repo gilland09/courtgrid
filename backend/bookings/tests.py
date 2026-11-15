@@ -92,13 +92,22 @@ class BookingAPITests(TransactionTestCase):
         )
 
     def test_valid_booking_is_created_with_server_calculated_price(self):
-        response = self.create_booking(total_price='0.00', rate_snapshot='0.00')
+        response = self.create_booking(
+            total_price='0.00',
+            rate_snapshot='0.00',
+            participant_names='Alex, Sam',
+        )
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['user'], self.user.pk)
         self.assertEqual(response.data['status'], Booking.Status.CONFIRMED)
+        self.assertEqual(response.data['facility_name'], self.facility.name)
+        self.assertEqual(response.data['resource_name'], self.resource.name)
+        self.assertEqual(response.data['sport_name'], self.sport.name)
         self.assertEqual(response.data['rate_snapshot'], '250.00')
         self.assertEqual(response.data['total_price'], '250.00')
+        self.assertEqual(response.data['participant_names'], 'Alex, Sam')
+        self.assertEqual(Booking.objects.get().participant_names, 'Alex, Sam')
         self.assertEqual(Booking.objects.count(), 1)
 
     def test_facility_default_rate_is_used_when_sport_rate_is_unset(self):

@@ -17,17 +17,28 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 
+from facilities.views import facility_detail_view
+
 from .views import (
     admin_dashboard_view,
     home_view,
     login_view,
     logout_view,
+    my_bookings_view,
+    register_view,
 )
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', login_view, name='login'),
+    path('register/', register_view, name='register'),
     path('home/', home_view, name='home'),
+    path('my-bookings/', my_bookings_view, name='my_bookings'),
+    path(
+        'facilities/<int:pk>/',
+        facility_detail_view,
+        name='facility-detail-page',
+    ),
     path('admin-dashboard/', admin_dashboard_view, name='admin_dashboard'),
     path('logout/', logout_view, name='logout'),
     path('api/', include('facilities.urls')),

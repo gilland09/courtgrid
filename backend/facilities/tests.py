@@ -4,6 +4,7 @@ from unittest.mock import Mock, patch
 
 import requests
 from django.contrib.auth import get_user_model
+from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
@@ -20,6 +21,55 @@ from .models import (
     SportSchedule,
 )
 from .serializers import FacilitySportSerializer
+
+
+class FacilityDetailPageTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.sport = Sport.objects.create(name='Basketball', slug='basketball')
+        cls.facility = Facility.objects.create(
+            name='Naval Test Court',
+            barangay='Poblacion',
+            capacity=30,
+        )
+        FacilitySport.objects.create(
+            facility=cls.facility,
+            sport=cls.sport,
+        )
+        FacilityOperatingHours.objects.create(
+            facility=cls.facility,
+            day_of_week=0,
+            start_time=time(8),
+            end_time=time(17),
+        )
+
+    def test_facility_detail_page_renders_search_form_and_supported_sport(self):
+        response = self.client.get(
+            reverse('facility-detail-page', kwargs={'pk': self.facility.pk}),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'facility_detail.html')
+        self.assertContains(response, self.facility.name)
+        self.assertContains(response, self.facility.barangay)
+        self.assertContains(response, '08:00')
+        self.assertContains(response, '17:00')
+        self.assertContains(response, 'id="availability-date"')
+        self.assertContains(response, 'id="availability-sport"')
+        self.assertContains(response, 'id="availability-results"')
+        self.assertContains(response, 'Basketball')
+        self.assertContains(response, 'name="csrfmiddlewaretoken"')
+        self.assertContains(response, 'js/availability.js')
+
+    def test_inactive_facility_detail_page_returns_not_found(self):
+        self.facility.is_active = False
+        self.facility.save(update_fields=('is_active',))
+
+        response = self.client.get(
+            reverse('facility-detail-page', kwargs={'pk': self.facility.pk}),
+        )
+
+        self.assertEqual(response.status_code, 404)
 
 
 class FacilityDiscoveryAPITests(APITestCase):

@@ -1,68 +1,81 @@
 document.getElementById('map').replaceChildren();
-const facilityMap = L.map('map').setView([11.5583, 124.3958], 13);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+const facilityMap = L.map('map').setView([11.5601, 124.3965], 15);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom',
     maxZoom: 19,
 }).addTo(facilityMap);
 
 const activeMarkers = [];
 const facilityList = document.getElementById('facility-list');
 const sportsFilter = document.getElementById('sports-filter');
-const filterButton = document.getElementById('filter-facilities');
+const sportPills = Array.from(document.querySelectorAll('[data-sport-slug]'));
+const allSportsButton = document.querySelector('[data-all-sports]');
+const pinCount = document.getElementById('verified-pin-count');
 
 function renderFacilitiesList(facilities) {
     facilityList.replaceChildren();
 
     if (facilities.length === 0) {
         const emptyMessage = document.createElement('p');
-        emptyMessage.className = 'text-body-secondary';
+        emptyMessage.className = 'empty-state text-body-secondary';
         emptyMessage.textContent = 'No facilities match the selected sports.';
         facilityList.append(emptyMessage);
         return;
     }
 
     const row = document.createElement('div');
-    row.className = 'row g-3';
+    row.className = 'row row-cols-1 row-cols-md-2 g-3';
 
     facilities.forEach((facility) => {
         const column = document.createElement('div');
-        column.className = 'col-12 col-md-6 col-lg-4';
+        column.className = 'col';
 
         const card = document.createElement('article');
-        card.className = 'card h-100';
+        card.className = 'facility-card h-100';
 
         const cardBody = document.createElement('div');
         cardBody.className = 'card-body d-flex flex-column';
 
+        const facilityLabel = document.createElement('span');
+        facilityLabel.className = 'facility-eyebrow';
+        facilityLabel.textContent = facility.is_demo_data
+            ? 'Demo facility'
+            : 'Sports facility';
+        cardBody.append(facilityLabel);
+
         const title = document.createElement('h3');
-        title.className = 'card-title h5';
+        title.className = 'card-title h5 mt-2';
         title.textContent = facility.name;
         cardBody.append(title);
 
-        const barangay = document.createElement('p');
-        barangay.className = 'card-text mb-1';
-        barangay.textContent = `Barangay: ${facility.barangay || 'Not specified'}`;
-        cardBody.append(barangay);
+        const location = document.createElement('p');
+        location.className = 'facility-location';
+        location.textContent = facility.address || facility.barangay || 'Naval, Biliran';
+        cardBody.append(location);
 
-        const capacity = document.createElement('p');
-        capacity.className = 'card-text';
-        capacity.textContent = `Capacity: ${facility.capacity ?? 'Not specified'}`;
-        cardBody.append(capacity);
+        const verification = document.createElement('p');
+        verification.className = facility.is_verified && !facility.is_demo_data
+            ? 'location-status is-verified'
+            : 'location-status';
+        verification.textContent = facility.is_verified && !facility.is_demo_data
+            ? 'Verified location'
+            : 'Demo location - verification pending';
+        cardBody.append(verification);
 
         const sportBadges = document.createElement('div');
-        sportBadges.className = 'd-flex flex-wrap gap-2 mb-3';
+        sportBadges.className = 'd-flex flex-wrap gap-2 mt-auto mb-3';
         (facility.supported_sports || []).forEach((sport) => {
             const badge = document.createElement('span');
-            badge.className = 'badge text-bg-primary';
+            badge.className = 'sport-badge';
             badge.textContent = sport.name;
             sportBadges.append(badge);
         });
         cardBody.append(sportBadges);
 
         const availabilityLink = document.createElement('a');
-        availabilityLink.className = 'btn btn-outline-primary mt-auto align-self-start';
-        availabilityLink.href = '#';
-        availabilityLink.textContent = 'View Availability';
+        availabilityLink.className = 'btn btn-primary w-100';
+        availabilityLink.href = `/facilities/${facility.id}/`;
+        availabilityLink.textContent = 'Check Playable Slots';
         cardBody.append(availabilityLink);
 
         card.append(cardBody);
@@ -89,24 +102,38 @@ function renderMapPins(facilities) {
         }
 
         const popup = document.createElement('div');
+        popup.className = 'map-popup';
         const name = document.createElement('strong');
         name.textContent = facility.name;
         popup.append(name);
 
-        const sportsList = document.createElement('ul');
-        sportsList.className = 'mb-0 mt-1 ps-3';
+        const address = document.createElement('p');
+        address.className = 'small my-1';
+        address.textContent = facility.address || facility.barangay || 'Naval, Biliran';
+        popup.append(address);
+
+        const sportsList = document.createElement('div');
+        sportsList.className = 'd-flex flex-wrap gap-1 my-2';
         (facility.supported_sports || []).forEach((sport) => {
-            const item = document.createElement('li');
-            item.textContent = sport.name;
-            sportsList.append(item);
+            const badge = document.createElement('span');
+            badge.className = 'sport-badge';
+            badge.textContent = sport.name;
+            sportsList.append(badge);
         });
         popup.append(sportsList);
+
+        const availabilityLink = document.createElement('a');
+        availabilityLink.className = 'btn btn-sm btn-primary';
+        availabilityLink.href = `/facilities/${facility.id}/`;
+        availabilityLink.textContent = 'View & Book Slots';
+        popup.append(availabilityLink);
 
         const marker = L.marker([latitude, longitude])
             .addTo(facilityMap)
             .bindPopup(popup);
         activeMarkers.push(marker);
     });
+    pinCount.textContent = `${activeMarkers.length} verified ${activeMarkers.length === 1 ? 'pin' : 'pins'}`;
 }
 
 async function fetchFacilities(sportSlugs = []) {
@@ -154,7 +181,44 @@ function getSelectedSports() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    fetchFacilities();
-    sportsFilter.addEventListener('change', () => fetchFacilities(getSelectedSports()));
-    filterButton.addEventListener('click', () => fetchFacilities(getSelectedSports()));
+    const initialSports = new URLSearchParams(window.location.search).get('sports');
+    if (initialSports) {
+        const selectedSlugs = new Set(initialSports.split(',').map((slug) => slug.trim()).filter(Boolean));
+        sportsFilter.querySelectorAll('option').forEach((option) => {
+            option.selected = selectedSlugs.has(option.value);
+        });
+    }
+
+    function syncSportPills() {
+        const selectedSlugs = new Set(getSelectedSports());
+        sportPills.forEach((pill) => {
+            const isSelected = selectedSlugs.has(pill.dataset.sportSlug);
+            pill.setAttribute('aria-pressed', String(isSelected));
+            pill.classList.toggle('is-active', isSelected);
+        });
+        const allSelected = selectedSlugs.size === 0;
+        allSportsButton.setAttribute('aria-pressed', String(allSelected));
+        allSportsButton.classList.toggle('is-active', allSelected);
+    }
+
+    sportPills.forEach((pill) => {
+        pill.addEventListener('click', () => {
+            const option = Array.from(sportsFilter.options)
+                .find((item) => item.value === pill.dataset.sportSlug);
+            option.selected = !option.selected;
+            syncSportPills();
+            fetchFacilities(getSelectedSports());
+        });
+    });
+
+    allSportsButton.addEventListener('click', () => {
+        Array.from(sportsFilter.options).forEach((option) => {
+            option.selected = false;
+        });
+        syncSportPills();
+        fetchFacilities();
+    });
+
+    syncSportPills();
+    fetchFacilities(getSelectedSports());
 });

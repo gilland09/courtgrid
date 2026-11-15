@@ -6,6 +6,18 @@ from django.db.models import F, Q
 from facilities.models import BookableResource, Sport
 
 
+class UserProfile(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='courtgrid_profile',
+    )
+    phone_number = models.CharField(max_length=32, blank=True)
+
+    def __str__(self):
+        return f'{self.user} profile'
+
+
 class Booking(models.Model):
     class Status(models.TextChoices):
         CONFIRMED = 'CONFIRMED', 'Confirmed'
@@ -29,6 +41,7 @@ class Booking(models.Model):
     start_datetime = models.DateTimeField()
     end_datetime = models.DateTimeField()
     participant_count = models.PositiveIntegerField(validators=[MinValueValidator(1)])
+    participant_names = models.TextField(blank=True)
     status = models.CharField(
         max_length=10,
         choices=Status.choices,

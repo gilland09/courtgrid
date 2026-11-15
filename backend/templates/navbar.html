@@ -1,7 +1,9 @@
-<nav class="navbar navbar-expand-lg {% if user.is_authenticated and user.is_staff %}navbar-dark bg-dark{% else %}navbar-light bg-light{% endif %}">
+{% load static %}
+<nav class="navbar navbar-expand-lg navbar-dark smart-navbar">
     <div class="container">
         <a class="navbar-brand" href="{% if user.is_authenticated and user.is_staff %}{% url 'admin_dashboard' %}{% else %}{% url 'home' %}{% endif %}">
-            Naval Court Booking
+            <img src="{% static 'images/logo-navbar.svg' %}" alt="CourtGrid Logo" width="36" height="36" class="me-2">
+            <strong><em>CourtGrid</em></strong>
         </a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavigation" aria-controls="mainNavigation" aria-expanded="false" aria-label="Toggle navigation">
             <span class="navbar-toggler-icon"></span>
@@ -10,22 +12,31 @@
             <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                 {% if user.is_authenticated %}
                     {% if user.is_staff %}
-                        <li class="nav-item"><a class="nav-link" href="{% url 'admin_dashboard' %}">Admin Dashboard</a></li>
+                        <li class="nav-item"><a class="nav-link nav-pill" href="{% url 'admin_dashboard' %}">Admin Dashboard</a></li>
                         <li class="nav-item"><a class="nav-link" href="{% url 'admin:facilities_facility_changelist' %}">Manage Facilities</a></li>
                         <li class="nav-item"><a class="nav-link" href="{% url 'admin:facilities_facilityclosure_changelist' %}">Manage Closures</a></li>
                     {% else %}
-                        <li class="nav-item"><a class="nav-link" href="{% url 'home' %}">Home</a></li>
-                        <li class="nav-item"><a class="nav-link" href="/api/bookings/my/">My Bookings</a></li>
+                        <li class="nav-item"><a class="nav-link nav-pill" href="{% url 'home' %}">Book a Court</a></li>
+                        <li class="nav-item"><a class="nav-link nav-pill" href="{% url 'my_bookings' %}">My Bookings</a></li>
                     {% endif %}
                 {% endif %}
             </ul>
             {% if user.is_authenticated %}
-                <form method="post" action="{% url 'logout' %}" class="d-flex">
+                <div class="navbar-account">
+                    <span class="user-avatar" aria-label="Signed in as {{ user.get_full_name|default:user.username }}">
+                        {% if user.first_name %}
+                            {{ user.first_name|first|upper }}{% if user.last_name %}{{ user.last_name|first|upper }}{% else %}{{ user.username|slice:"1:2"|upper }}{% endif %}
+                        {% else %}
+                            {{ user.username|slice:":2"|upper }}
+                        {% endif %}
+                    </span>
+                    <form method="post" action="{% url 'logout' %}" class="d-flex">
                     {% csrf_token %}
-                    <button type="submit" class="btn {% if user.is_staff %}btn-outline-light{% else %}btn-outline-secondary{% endif %}">Logout</button>
-                </form>
+                    <button type="submit" class="btn btn-outline-light hover-lift">Logout</button>
+                    </form>
+                </div>
             {% else %}
-                <a class="btn btn-primary" href="{% url 'login' %}">Login</a>
+                <a class="btn btn-primary hover-lift" href="{% url 'login' %}">Login</a>
             {% endif %}
         </div>
     </div>

@@ -1,0 +1,134 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ facility.name }} | CourtGrid{% endblock %}
+
+{% block content %}
+<section id="facility-detail" class="facility-page mb-5" data-facility-id="{{ facility.pk }}" data-facility-name="{{ facility.name }}">
+    <a href="{% url 'home' %}" class="link-secondary text-decoration-none">&larr; Back to facilities</a>
+    <header class="facility-detail-header mt-3">
+        <div>
+            <p class="text-uppercase small fw-semibold text-body-secondary mb-2">CourtGrid venue</p>
+            <h1 class="display-6 fw-bold mb-2">{{ facility.name }}</h1>
+            <p class="text-body-secondary mb-0">{{ facility.barangay|default:"Naval" }}, Biliran <span class="mx-1">&middot;</span> {{ facility.capacity|default:"Flexible" }} venue capacity</p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            {% for facility_sport in facility_sports %}
+                <span class="sport-badge">{{ facility_sport.sport.name }}</span>
+            {% endfor %}
+        </div>
+    </header>
+
+    <section class="when-card mt-4 mb-4" aria-labelledby="when-heading">
+        <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
+            <div>
+                <p class="text-uppercase small fw-semibold text-body-secondary mb-1">Plan your game</p>
+                <h2 id="when-heading" class="h4 mb-0">When</h2>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <label for="availability-sport" class="form-label mb-0">Sport</label>
+                <select id="availability-sport" class="form-select">
+                    {% for facility_sport in facility_sports %}
+                        <option value="{{ facility_sport.sport_id }}">{{ facility_sport.sport.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div id="quick-date-pills" class="quick-date-pills" role="group" aria-label="Choose a date"></div>
+        <input id="availability-date" type="date" class="visually-hidden" value="{{ today }}" aria-label="Selected date">
+    </section>
+
+    <section class="operating-hours-card mb-4" aria-labelledby="operating-hours-heading">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+            <h2 id="operating-hours-heading" class="h6 mb-0">Weekly operating hours</h2>
+            <span class="small text-body-secondary">Local time · Asia/Manila</span>
+        </div>
+        <div class="operating-hours-list">
+            {% for hours in operating_hours %}
+                <div class="operating-hour-row">
+                    <span>{{ hours.get_day_of_week_display }}</span>
+                    <strong>{{ hours.start_time|time:"H:i" }}&ndash;{{ hours.end_time|time:"H:i" }}</strong>
+                </div>
+            {% empty %}
+                <p class="text-body-secondary mb-0">Operating hours have not been listed.</p>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section aria-labelledby="availability-heading">
+        <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-3">
+            <div>
+                <p class="text-uppercase small fw-semibold text-body-secondary mb-1">Live availability</p>
+                <h2 id="availability-heading" class="h4 mb-0">Court schedule</h2>
+            </div>
+            <div class="schedule-legend" aria-label="Schedule legend">
+                <span><i class="legend-dot available"></i> Available</span>
+                <span><i class="legend-dot selected"></i> Selected</span>
+                <span><i class="legend-dot unavailable"></i> Booked / Closed</span>
+            </div>
+        </div>
+        <form id="booking-csrf-form" class="d-none">{% csrf_token %}</form>
+        <div id="availability-results" aria-live="polite">
+            <p class="text-body-secondary">Choose a date to view available courts.</p>
+        </div>
+    </section>
+</section>
+
+<div id="selected-slot-bar" class="selected-slot-bar" hidden>
+    <span id="selected-slot-label">1 slot selected</span>
+    <button id="continue-booking" type="button" class="btn btn-primary">Continue to Confirm</button>
+</div>
+
+<div class="modal fade" id="booking-modal" tabindex="-1" aria-labelledby="booking-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <section class="modal-content booking-modal-content">
+            <div class="modal-header border-0 pb-0">
+                <div>
+                    <p class="text-uppercase small fw-semibold text-body-secondary mb-1">Your reservation</p>
+                    <h2 class="modal-title h4" id="booking-modal-title">Confirm your booking</h2>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="booking-summary" class="booking-summary mb-3"></div>
+                <div id="booking-result" class="mb-3" aria-live="polite"></div>
+                <form id="booking-confirm-form">
+                    <div class="mb-3">
+                        <label for="participant-count" class="form-label">Number of participants</label>
+                        <input id="participant-count" name="participant_count" type="number" class="form-control" min="1" value="1" required>
+                        <div id="participant-capacity-help" class="form-text"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="participant-names" class="form-label">Player names <span class="text-body-secondary">(optional)</span></label>
+                        <textarea id="participant-names" name="participant_names" class="form-control" rows="2" maxlength="2000" placeholder="Add one or more names"></textarea>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-sm-6">
+                            <label for="booker-email" class="form-label">Contact email</label>
+                            <input id="booker-email" type="email" class="form-control" value="{{ booker_email }}" readonly>
+                        </div>
+                        <div class="col-sm-6">
+                            <label for="booker-phone" class="form-label">Phone</label>
+                            <input id="booker-phone" type="tel" class="form-control" value="{{ booker_phone }}" readonly>
+                        </div>
+                    </div>
+                    {% if not user.is_authenticated %}
+                        <p class="small text-body-secondary mt-3 mb-0">Sign in to confirm your reservation and add contact details.</p>
+                    {% endif %}
+                    <div class="d-flex gap-2 mt-4">
+                        <button type="button" class="btn btn-outline-secondary flex-fill" data-bs-dismiss="modal">Cancel</button>
+                        <button id="confirm-booking" type="submit" class="btn btn-primary flex-fill">Confirm Booking</button>
+                    </div>
+                </form>
+            </div>
+        </section>
+    </div>
+</div>
+
+{{ facility_resources|json_script:"facility-resources-data" }}
+{{ sport_rates|json_script:"sport-rates-data" }}
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/availability.js' %}"></script>
+{% endblock %}

@@ -27,7 +27,7 @@ class MyBookingListView(ListAPIView):
     def get_queryset(self):
         return (
             Booking.objects.filter(user=self.request.user)
-            .select_related('user', 'resource', 'sport')
+            .select_related('user', 'resource__facility', 'sport')
         )
 
 
@@ -38,7 +38,7 @@ class MyBookingDetailView(RetrieveAPIView):
     def get_queryset(self):
         return (
             Booking.objects.filter(user=self.request.user)
-            .select_related('user', 'resource', 'sport')
+            .select_related('user', 'resource__facility', 'sport')
         )
 
 
@@ -168,6 +168,7 @@ class BookingCreateView(APIView):
                 start_datetime=start_datetime,
                 end_datetime=end_datetime,
                 participant_count=requested['participant_count'],
+                participant_names=requested.get('participant_names', ''),
                 status=Booking.Status.CONFIRMED,
                 rate_snapshot=hourly_rate,
                 total_price=hourly_rate,

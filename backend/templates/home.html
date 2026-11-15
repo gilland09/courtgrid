@@ -1,45 +1,70 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Find Courts | Naval Court Booking{% endblock %}
+{% block title %}Find Courts | CourtGrid{% endblock %}
 
 {% block content %}
-<section class="p-4 p-md-5 mb-4 bg-body-tertiary rounded-3">
+<section class="discovery-hero p-4 p-md-5 mb-4">
     <div class="container-fluid py-2">
-        <h1 class="display-6 fw-semibold">Find a sports facility in Naval</h1>
-        <p class="col-md-9 fs-5 mb-0">
-            Explore facilities and their supported sports. Facility details and map locations will be shown only when available and verified.
+        <p class="text-uppercase small fw-semibold mb-2">CourtGrid discovery</p>
+        <h1 class="display-5 fw-semibold">Find your next game in Naval</h1>
+        <p class="col-md-9 fs-5 mb-0 opacity-75">
+            Explore local courts, compare supported sports, and find a time that works.
         </p>
     </div>
 </section>
 
-<section aria-labelledby="sports-filter-heading" class="mb-4">
-    <h2 id="sports-filter-heading" class="h4">Filter by sports</h2>
-    <label for="sports-filter" class="form-label">Choose one or more sports</label>
-    <select id="sports-filter" name="sports" class="form-select" multiple size="5" aria-describedby="sports-filter-help">
+<section aria-labelledby="sports-filter-heading" class="filter-panel mb-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <h2 id="sports-filter-heading" class="h5 mb-1">What do you want to play?</h2>
+            <p id="sports-filter-help" class="small text-body-secondary mb-0">Choose one or more sports to find matching facilities.</p>
+        </div>
+        <span class="matching-badge">OR matching active</span>
+    </div>
+    <label for="sports-filter" class="visually-hidden">Selected sports</label>
+    <select id="sports-filter" name="sports" class="visually-hidden" multiple tabindex="-1" aria-hidden="true">
         {% for sport in sports %}
             <option value="{{ sport.slug }}">{{ sport.name }}</option>
-        {% empty %}
-            <option disabled>No active sports are listed yet</option>
         {% endfor %}
     </select>
-    <div id="sports-filter-help" class="form-text">Selecting multiple sports will use OR matching by default.</div>
-    <button id="filter-facilities" type="button" class="btn btn-primary mt-2">Filter</button>
-</section>
-
-<section aria-labelledby="map-heading" class="mb-4">
-    <h2 id="map-heading" class="h4">Facility map</h2>
-    <div id="map" class="facility-map rounded border" role="region" aria-label="Facility map">
-        <p class="text-body-secondary p-3 mb-0">The map will display verified facility locations when map integration is added.</p>
+    <div id="sports-filter-pills" class="d-flex flex-wrap gap-2" role="group" aria-label="Filter facilities by sport">
+        <button type="button" class="filter-pill is-active" data-all-sports aria-pressed="true">All Sports</button>
+        {% for sport in sports %}
+            <button type="button" class="filter-pill" data-sport-slug="{{ sport.slug }}" aria-pressed="false">{{ sport.name }}</button>
+        {% empty %}
+            <span class="small text-body-secondary">No active sports are listed yet.</span>
+        {% endfor %}
     </div>
 </section>
 
-<section aria-labelledby="facility-list-heading">
-    <h2 id="facility-list-heading" class="h4">Facilities</h2>
-    <div id="facility-list" aria-live="polite">
-        <p class="text-body-secondary">Facility results will appear here when discovery is connected to this page.</p>
-    </div>
-</section>
+<div class="row g-4 align-items-start">
+    <section class="col-lg-7" aria-labelledby="facility-list-heading">
+        <div class="d-flex justify-content-between align-items-end mb-3">
+            <div>
+                <p class="text-uppercase small fw-semibold text-body-secondary mb-1">Explore</p>
+                <h2 id="facility-list-heading" class="h4 mb-0">Courts and facilities</h2>
+            </div>
+        </div>
+        <div id="facility-list" aria-live="polite">
+            <p class="text-body-secondary">Loading facilities...</p>
+        </div>
+    </section>
+
+    <aside class="col-lg-5" aria-labelledby="map-heading">
+        <div class="map-sticky">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <p class="text-uppercase small fw-semibold text-body-secondary mb-1">Locations</p>
+                    <h2 id="map-heading" class="h4 mb-0">Facility map</h2>
+                </div>
+                <span id="verified-pin-count" class="pin-count" role="status">0 verified pins</span>
+            </div>
+            <div id="map" class="facility-map" role="region" aria-label="Verified facility locations"></div>
+            <p class="small text-body-secondary mt-2 mb-0">Only independently verified, non-demo locations appear on the map.</p>
+        </div>
+    </aside>
+</div>
 {% endblock %}
 
 {% block scripts %}

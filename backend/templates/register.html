@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Sign Up | CourtGrid{% endblock %}
+
+{% block content %}
+<div class="auth-page">
+    <section class="auth-card">
+        <img src="{% static 'images/logo-green.svg' %}" alt="CourtGrid Logo" width="64" height="64" class="d-block mx-auto mb-3">
+        <p class="auth-eyebrow">WELCOME TO COURTGRID</p>
+        <h1 class="h3 text-center mb-2">Create a CourtGrid Account</h1>
+        <p class="text-body-secondary text-center mb-4">Join the community and find your next game.</p>
+
+        <form method="post" novalidate>
+            {% csrf_token %}
+            {% if form.non_field_errors %}
+                <div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>
+            {% endif %}
+
+            <div class="row g-3">
+                <div class="col-12">
+                    <label for="{{ form.full_name.id_for_label }}" class="form-label">Full Name</label>
+                    <input type="text" name="{{ form.full_name.html_name }}" id="{{ form.full_name.id_for_label }}" value="{{ form.full_name.value|default_if_none:'' }}" class="form-control{% if form.full_name.errors %} is-invalid{% endif %}" autocomplete="name" placeholder="Your full name">
+                    {% for error in form.full_name.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
+                </div>
+                <div class="col-12">
+                    <label for="{{ form.username.id_for_label }}" class="form-label">Username</label>
+                    <input type="text" name="{{ form.username.html_name }}" id="{{ form.username.id_for_label }}" value="{{ form.username.value|default_if_none:'' }}" class="form-control{% if form.username.errors %} is-invalid{% endif %}" autocomplete="username" required placeholder="Choose a username">
+                    {% for error in form.username.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
+                </div>
+                <div class="col-12 col-sm-6">
+                    <label for="{{ form.email.id_for_label }}" class="form-label">Email Address</label>
+                    <div class="input-group">
+                        <span class="input-group-text auth-input-icon" aria-hidden="true">@</span>
+                        <input type="email" name="{{ form.email.html_name }}" id="{{ form.email.id_for_label }}" value="{{ form.email.value|default_if_none:'' }}" class="form-control{% if form.email.errors %} is-invalid{% endif %}" autocomplete="email" placeholder="you@example.com">
+                    </div>
+                    {% for error in form.email.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                </div>
+                <div class="col-12 col-sm-6">
+                    <label for="{{ form.phone_number.id_for_label }}" class="form-label">Phone Number</label>
+                    <input type="tel" name="{{ form.phone_number.html_name }}" id="{{ form.phone_number.id_for_label }}" value="{{ form.phone_number.value|default_if_none:'' }}" class="form-control{% if form.phone_number.errors %} is-invalid{% endif %}" autocomplete="tel" placeholder="+63">
+                    {% for error in form.phone_number.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                </div>
+                <div class="col-12 col-sm-6">
+                    <label for="{{ form.password1.id_for_label }}" class="form-label">Password</label>
+                    <div class="input-group">
+                        <input type="password" name="{{ form.password1.html_name }}" id="{{ form.password1.id_for_label }}" class="form-control{% if form.password1.errors %} is-invalid{% endif %}" autocomplete="new-password" required>
+                        <button class="password-toggle" type="button" data-password-toggle="{{ form.password1.id_for_label }}" aria-label="Show password">Show</button>
+                        {% for error in form.password1.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
+                    </div>
+                </div>
+                <div class="col-12 col-sm-6">
+                    <label for="{{ form.password2.id_for_label }}" class="form-label">Confirm Password</label>
+                    <div class="input-group">
+                        <input type="password" name="{{ form.password2.html_name }}" id="{{ form.password2.id_for_label }}" class="form-control{% if form.password2.errors %} is-invalid{% endif %}" autocomplete="new-password" required>
+                        <button class="password-toggle" type="button" data-password-toggle="{{ form.password2.id_for_label }}" aria-label="Show password">Show</button>
+                        {% for error in form.password2.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
+                    </div>
+                </div>
+                <div class="col-12">
+                    <p class="password-hint mb-0">Min. 8 characters, not common or all-numeric.</p>
+                </div>
+                <div class="col-12">
+                    <div class="form-check">
+                        <input class="form-check-input{% if form.accept_terms.errors %} is-invalid{% endif %}" type="checkbox" name="{{ form.accept_terms.html_name }}" id="{{ form.accept_terms.id_for_label }}" required>
+                        <label class="form-check-label" for="{{ form.accept_terms.id_for_label }}">I agree to the CourtGrid Terms and court rules</label>
+                        {% for error in form.accept_terms.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </div>
+                </div>
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary auth-submit w-100">Create Account</button>
+                </div>
+            </div>
+        </form>
+
+        <p class="text-center text-body-secondary mt-4 mb-0">Already have an account? <a href="{% url 'login' %}">Sign in</a></p>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.querySelectorAll('[data-password-toggle]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const input = document.getElementById(button.dataset.passwordToggle);
+            const showPassword = input.type === 'password';
+            input.type = showPassword ? 'text' : 'password';
+            button.textContent = showPassword ? 'Hide' : 'Show';
+            button.setAttribute('aria-label', `${showPassword ? 'Hide' : 'Show'} password`);
+        });
+    });
+</script>
+{% endblock %}

@@ -12,6 +12,9 @@ class BookingSerializer(serializers.ModelSerializer):
     user = serializers.PrimaryKeyRelatedField(read_only=True)
     resource_id = serializers.IntegerField(read_only=True)
     sport_id = serializers.IntegerField(read_only=True)
+    facility_name = serializers.CharField(source='resource.facility.name', read_only=True)
+    resource_name = serializers.CharField(source='resource.name', read_only=True)
+    sport_name = serializers.CharField(source='sport.name', read_only=True)
 
     class Meta:
         model = Booking
@@ -19,10 +22,14 @@ class BookingSerializer(serializers.ModelSerializer):
             'id',
             'user',
             'resource_id',
+            'facility_name',
+            'resource_name',
             'sport_id',
+            'sport_name',
             'start_datetime',
             'end_datetime',
             'participant_count',
+            'participant_names',
             'status',
             'rate_snapshot',
             'total_price',
@@ -46,6 +53,11 @@ class CreateBookingSerializer(serializers.Serializer):
     start_datetime = serializers.DateTimeField()
     end_datetime = serializers.DateTimeField()
     participant_count = serializers.IntegerField(min_value=1)
+    participant_names = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=2000,
+    )
 
     def validate(self, attrs):
         start_datetime = attrs['start_datetime']

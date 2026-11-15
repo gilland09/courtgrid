@@ -13,6 +13,7 @@ class BookingAdmin(admin.ModelAdmin):
         'start_datetime',
         'end_datetime',
         'participant_count',
+        'participant_names',
         'status',
         'total_price',
     )
@@ -21,6 +22,7 @@ class BookingAdmin(admin.ModelAdmin):
     readonly_fields = (
         'rate_snapshot',
         'total_price',
+        'participant_names',
         'currency',
         'created_at',
         'updated_at',
