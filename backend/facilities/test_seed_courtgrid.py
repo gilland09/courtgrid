@@ -33,10 +33,31 @@ class SeedCourtGridCommandTests(TestCase):
         self.assertEqual(FacilityOperatingHours.objects.count(), 35)
         self.assertEqual(SportSchedule.objects.count(), 63)
 
-        owner = get_user_model().objects.get(username='owner_tonio')
-        self.assertEqual(owner.courtgrid_profile.role, 'court_owner')
-        self.assertTrue(owner.check_password('owner123'))
-        self.assertEqual(owner.owned_facilities.count(), 5)
+        expected_owners = {
+            "Tonio's Dink District": ('owner_tonio', 'Tonio', 'Partner'),
+            'BiPSU Sports Complex': ('owner_bipsu', 'BiPSU', 'Athletics Office'),
+            'Naval Municipal Gymnasium': ('owner_municipal', 'Naval', 'LGU Sports'),
+            'Caneja Turf & Pickleball Center': (
+                'owner_caneja',
+                'Caneja',
+                'Turf Management',
+            ),
+            'Santissimo Rosario Barangay Court': (
+                'owner_santissimo',
+                'Brgy.',
+                'Santissimo Council',
+            ),
+        }
+        for facility_name, (username, first_name, last_name) in expected_owners.items():
+            owner = get_user_model().objects.get(username=username)
+            self.assertEqual(owner.courtgrid_profile.role, 'court_owner')
+            self.assertTrue(owner.check_password('owner123'))
+            self.assertEqual((owner.first_name, owner.last_name), (first_name, last_name))
+            self.assertEqual(
+                list(owner.owned_facilities.values_list('name', flat=True)),
+                [facility_name],
+            )
+
         seeded_bookings = Booking.objects.filter(user__username='demo_player')
         self.assertEqual(seeded_bookings.count(), 2)
         self.assertTrue(all(booking.payment_reference for booking in seeded_bookings))
@@ -50,7 +71,10 @@ class SeedCourtGridCommandTests(TestCase):
 
         for facility_data in FACILITIES:
             facility = Facility.objects.get(name=facility_data['name'])
-            self.assertEqual(facility.owner, owner)
+            self.assertEqual(
+                facility.owner.username,
+                expected_owners[facility_data['name']][0],
+            )
             self.assertTrue(facility.is_active)
             self.assertFalse(facility.is_demo_data)
             self.assertTrue(facility.is_verified)
@@ -67,6 +91,18 @@ class SeedCourtGridCommandTests(TestCase):
                     facility_sport.hourly_rate,
                     Decimal(SPORT_RATES[facility_sport.sport.name]),
                 )
+        self.assertTrue(
+            Booking.objects.filter(
+                resource__facility__name="Tonio's Dink District",
+                status=Booking.Status.CONFIRMED,
+            ).exists()
+        )
+        self.assertTrue(
+            Booking.objects.filter(
+                resource__facility__name='BiPSU Sports Complex',
+                status=Booking.Status.CONFIRMED,
+            ).exists()
+        )
 
         facility = Facility.objects.get(name="Tonio's Dink District")
         resource = facility.resources.get(name='Court 1')

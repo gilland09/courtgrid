@@ -34,6 +34,8 @@ FACILITIES = (
         'longitude': '124.397200',
         'sports': ('Basketball', 'Volleyball'),
         'courts': 2,
+        'owner_username': 'owner_municipal',
+        'owner_name': 'Naval LGU Sports',
     },
     {
         'name': 'BiPSU Sports Complex',
@@ -44,6 +46,8 @@ FACILITIES = (
         'longitude': '124.399100',
         'sports': ('Basketball', 'Volleyball', 'Pickleball'),
         'courts': 3,
+        'owner_username': 'owner_bipsu',
+        'owner_name': 'BiPSU Athletics Office',
     },
     {
         'name': 'Caneja Turf & Pickleball Center',
@@ -54,6 +58,8 @@ FACILITIES = (
         'longitude': '124.395800',
         'sports': ('Pickleball', 'Badminton'),
         'courts': 2,
+        'owner_username': 'owner_caneja',
+        'owner_name': 'Caneja Turf Management',
     },
     {
         'name': 'Santissimo Rosario Barangay Court',
@@ -64,6 +70,8 @@ FACILITIES = (
         'longitude': '124.401500',
         'sports': ('Basketball',),
         'courts': 1,
+        'owner_username': 'owner_santissimo',
+        'owner_name': 'Brgy. Santissimo Council',
     },
     {
         'name': "Tonio's Dink District",
@@ -74,6 +82,8 @@ FACILITIES = (
         'longitude': '124.402500',
         'sports': ('Pickleball',),
         'courts': 3,
+        'owner_username': 'owner_tonio',
+        'owner_name': 'Tonio Partner',
     },
 )
 
@@ -91,23 +101,27 @@ class Command(BaseCommand):
     @transaction.atomic
     def handle(self, *args, **options):
         user_model = get_user_model()
-        owner, _ = user_model.objects.get_or_create(
-            username='owner_tonio',
-            defaults={
-                'email': 'owner_tonio@courtgrid.local',
-                'first_name': 'Tonio',
-                'last_name': 'Owner',
-            },
-        )
-        owner.set_password('owner123')
-        owner.save(update_fields=('password',))
-        UserProfile.objects.update_or_create(
-            user=owner,
-            defaults={
-                'role': UserProfile.Role.COURT_OWNER,
-                'phone_number': '',
-            },
-        )
+        owners = {}
+        for facility_data in FACILITIES:
+            owner, _ = user_model.objects.get_or_create(
+                username=facility_data['owner_username'],
+                defaults={
+                    'email': f"{facility_data['owner_username']}@courtgrid.local",
+                },
+            )
+            first_name, _, last_name = facility_data['owner_name'].partition(' ')
+            owner.first_name = first_name
+            owner.last_name = last_name
+            owner.set_password('owner123')
+            owner.save(update_fields=('first_name', 'last_name', 'password'))
+            UserProfile.objects.update_or_create(
+                user=owner,
+                defaults={
+                    'role': UserProfile.Role.COURT_OWNER,
+                    'phone_number': '',
+                },
+            )
+            owners[owner.username] = owner
 
         sports = {}
         for name, slug in SPORTS:
@@ -117,6 +131,7 @@ class Command(BaseCommand):
             )
 
         for facility_data in FACILITIES:
+            owner = owners[facility_data['owner_username']]
             facility, _ = Facility.objects.update_or_create(
                 name=facility_data['name'],
                 defaults={
@@ -186,7 +201,7 @@ class Command(BaseCommand):
                         defaults={},
                     )
 
-        self.seed_demo_bookings(owner, user_model)
+        self.seed_demo_bookings(owners, user_model)
         for booking in Booking.objects.all().iterator():
             booking.save()
 
@@ -195,7 +210,7 @@ class Command(BaseCommand):
         ))
 
     @staticmethod
-    def seed_demo_bookings(owner, user_model):
+    def seed_demo_bookings(owners, user_model):
         demo_customer, _ = user_model.objects.get_or_create(
             username='demo_player',
             defaults={
@@ -208,21 +223,21 @@ class Command(BaseCommand):
             user=demo_customer,
             defaults={'role': UserProfile.Role.CUSTOMER},
         )
-        owned_facility_ids = owner.owned_facilities.values_list('pk', flat=True)
-        if Booking.objects.filter(
-            user=demo_customer,
-            resource__facility_id__in=owned_facility_ids,
-            status=Booking.Status.CONFIRMED,
-        ).exists():
-            return
-
         demo_slots = (
             ('BiPSU Sports Complex', 'Basketball', 'Court 3', time(18)),
             ("Tonio's Dink District", 'Pickleball', 'Court 3', time(19)),
         )
         local_tomorrow = timezone.localdate() + timedelta(days=1)
         for facility_name, sport_name, resource_name, start_time in demo_slots:
+            facility_data = next(item for item in FACILITIES if item['name'] == facility_name)
+            owner = owners[facility_data['owner_username']]
             facility = Facility.objects.get(name=facility_name, owner=owner)
+            if Booking.objects.filter(
+                user=demo_customer,
+                resource__facility=facility,
+                status=Booking.Status.CONFIRMED,
+            ).exists():
+                continue
             resource = BookableResource.objects.get(
                 facility=facility,
                 name=resource_name,

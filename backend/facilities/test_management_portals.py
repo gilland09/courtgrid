@@ -47,6 +47,16 @@ class InAppManagementPortalTests(TestCase):
             name='Other Owner Venue',
             owner=cls.other_owner,
         )
+        cls.other_facility_sport = FacilitySport.objects.create(
+            facility=cls.other_facility,
+            sport=cls.sport,
+            hourly_rate='300.00',
+        )
+        cls.other_resource = BookableResource.objects.create(
+            facility=cls.other_facility,
+            name='Other Court',
+            capacity=12,
+        )
         cls.facility_sport = FacilitySport.objects.create(
             facility=cls.facility,
             sport=cls.sport,
@@ -147,6 +157,104 @@ class InAppManagementPortalTests(TestCase):
         self.other_facility.refresh_from_db()
         self.assertEqual(self.other_facility.name, 'Other Owner Venue')
 
+    def test_owner_portal_and_closure_manager_show_only_owned_venue_data(self):
+        own_closure = FacilityClosure.objects.create(
+            facility=self.facility,
+            resource=self.resource,
+            start_datetime=timezone.now() + timedelta(days=4),
+            end_datetime=timezone.now() + timedelta(days=4, hours=1),
+            reason='Owner maintenance',
+        )
+        FacilityClosure.objects.create(
+            facility=self.other_facility,
+            resource=self.other_resource,
+            start_datetime=timezone.now() + timedelta(days=5),
+            end_datetime=timezone.now() + timedelta(days=5, hours=1),
+            reason='Other owner maintenance',
+        )
+        Booking.objects.create(
+            user=self.customer,
+            resource=self.resource,
+            sport=self.sport,
+            start_datetime=timezone.now() + timedelta(days=6),
+            end_datetime=timezone.now() + timedelta(days=6, hours=1),
+            participant_count=2,
+            rate_snapshot=Decimal('200.00'),
+            total_price=Decimal('200.00'),
+        )
+        Booking.objects.create(
+            user=self.customer,
+            resource=self.other_resource,
+            sport=self.sport,
+            start_datetime=timezone.now() + timedelta(days=7),
+            end_datetime=timezone.now() + timedelta(days=7, hours=1),
+            participant_count=2,
+            rate_snapshot=Decimal('300.00'),
+            total_price=Decimal('300.00'),
+        )
+        self.client.force_login(self.owner)
+
+        owner_response = self.client.get(reverse('owner_dashboard'))
+        closure_response = self.client.get(reverse('management_closures'))
+
+        self.assertEqual(owner_response.status_code, 200)
+        self.assertContains(owner_response, 'Owner Test Venue')
+        self.assertNotContains(owner_response, 'Other Owner Venue')
+        self.assertNotContains(owner_response, 'Other Court')
+        self.assertNotContains(owner_response, 'Other owner maintenance')
+        self.assertEqual(len(owner_response.context['facilities']), 1)
+        self.assertEqual(len(owner_response.context['venue_bookings']), 1)
+        self.assertEqual(
+            owner_response.context['financial_totals']['gross'],
+            Decimal('200.00'),
+        )
+
+        self.assertEqual(closure_response.status_code, 200)
+        self.assertContains(closure_response, 'Owner maintenance')
+        self.assertNotContains(closure_response, 'Other owner maintenance')
+        self.assertEqual(list(closure_response.context['facilities']), [self.facility])
+        self.assertEqual(list(closure_response.context['closures']), [own_closure])
+        self.assertEqual(
+            list(closure_response.context['closure_form'].fields['facility'].queryset),
+            [self.facility],
+        )
+        self.assertEqual(
+            list(closure_response.context['closure_form'].fields['resource'].queryset),
+            [self.resource],
+        )
+
+    def test_owner_cannot_update_another_owners_rate_or_create_closure_there(self):
+        self.client.force_login(self.owner)
+
+        rate_response = self.client.post(
+            reverse('owner_dashboard'),
+            {
+                'action': 'save_rate',
+                'facility_sport_id': self.other_facility_sport.pk,
+                'hourly_rate': '1.00',
+                'is_active': 'on',
+            },
+        )
+        closure_response = self.client.post(
+            reverse('management_closures'),
+            {
+                'action': 'create_closure',
+                'facility': self.other_facility.pk,
+                'resource': self.other_resource.pk,
+                'start_datetime': '2026-11-25T10:00',
+                'end_datetime': '2026-11-25T11:00',
+                'reason': 'Unauthorized closure',
+            },
+        )
+
+        self.assertEqual(rate_response.status_code, 404)
+        self.assertRedirects(closure_response, reverse('management_closures'))
+        self.other_facility_sport.refresh_from_db()
+        self.assertEqual(self.other_facility_sport.hourly_rate, Decimal('300.00'))
+        self.assertFalse(
+            FacilityClosure.objects.filter(reason='Unauthorized closure').exists()
+        )
+
     def test_owner_can_schedule_facility_closure(self):
         self.client.force_login(self.owner)
         start = timezone.localtime(timezone.now() + timedelta(days=2)).replace(
@@ -221,3 +329,19 @@ class InAppManagementPortalTests(TestCase):
         self.assertEqual(self.client.get(reverse('owner_dashboard')).status_code, 403)
         self.assertEqual(self.client.get(reverse('management_facilities')).status_code, 403)
         self.assertEqual(self.client.get(reverse('management_closures')).status_code, 403)
+
+    def test_platform_admin_sees_all_facilities_and_closures(self):
+        self.client.force_login(self.admin)
+
+        owner_response = self.client.get(reverse('owner_dashboard'))
+        closure_response = self.client.get(reverse('management_closures'))
+
+        self.assertEqual(owner_response.status_code, 200)
+        self.assertContains(owner_response, 'Owner Test Venue')
+        self.assertContains(owner_response, 'Other Owner Venue')
+        self.assertEqual(len(owner_response.context['facilities']), 2)
+        self.assertEqual(closure_response.status_code, 200)
+        self.assertEqual(
+            set(closure_response.context['facilities']),
+            {self.facility, self.other_facility},
+        )
