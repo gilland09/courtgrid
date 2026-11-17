@@ -115,6 +115,33 @@
                                 <div id="booker-phone-error" class="invalid-feedback"></div>
                             </div>
                         </div>
+                        <fieldset class="payment-method-section mt-4">
+                            <legend class="form-label">Payment method</legend>
+                            <div class="payment-method-options">
+                                <label class="payment-method-option">
+                                    <input type="radio" name="payment_method" value="gcash" checked>
+                                    <span><strong>GCash</strong><small>Instant e-Wallet</small></span>
+                                </label>
+                                <label class="payment-method-option">
+                                    <input type="radio" name="payment_method" value="maya">
+                                    <span><strong>Maya</strong><small>Instant e-Wallet</small></span>
+                                </label>
+                                <label class="payment-method-option">
+                                    <input type="radio" name="payment_method" value="card">
+                                    <span><strong>Card</strong><small>Credit / Debit</small></span>
+                                </label>
+                                <label class="payment-method-option">
+                                    <input type="radio" name="payment_method" value="cash">
+                                    <span><strong>Pay at Venue</strong><small>Cash on arrival</small></span>
+                                </label>
+                            </div>
+                            <p class="form-text mt-2 mb-0">Payment options are recorded at checkout; external payment processing is not connected.</p>
+                        </fieldset>
+                        <section class="payment-breakdown mt-3" aria-label="Price breakdown">
+                            <div><span id="rental-breakdown-label">Court Rental (0 slots)</span><strong id="rental-breakdown-amount">₱0.00</strong></div>
+                            <div><span>Included Platform &amp; Service Fee (5%)</span><strong id="platform-fee-breakdown">₱0.00</strong></div>
+                            <div class="payment-breakdown-total"><span>Total Due</span><strong id="total-due-breakdown">₱0.00</strong></div>
+                        </section>
                         {% if not user.is_authenticated %}
                             <p class="small text-body-secondary mt-3 mb-0">Sign in to confirm your reservation.</p>
                         {% endif %}

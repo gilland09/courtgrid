@@ -13,6 +13,13 @@
     </div>
 </header>
 
+<section class="finance-kpis" aria-label="Marketplace monetization summary">
+    <article class="finance-kpi"><span>Total Marketplace Volume (GMV)</span><strong>₱{{ financial_totals.gross|floatformat:2 }}</strong></article>
+    <article class="finance-kpi is-revenue"><span>Platform Commission Revenue (5%)</span><strong>₱{{ financial_totals.platform_fee|floatformat:2 }}</strong></article>
+    <article class="finance-kpi"><span>Partner Venue Payouts (95%)</span><strong>₱{{ financial_totals.owner_payout|floatformat:2 }}</strong></article>
+    <article class="finance-kpi"><span>Active Verified Venues &amp; Courts</span><strong>{{ active_verified_venues }} venues · {{ active_courts }} courts</strong></article>
+</section>
+
 <section class="card hover-lift mb-4" aria-labelledby="today-bookings-heading">
     <div class="card-body">
         <h2 id="today-bookings-heading" class="h4">Today's Confirmed Bookings</h2>
@@ -55,7 +62,8 @@
                 <thead>
                     <tr>
                         <th>Facility / Court</th><th>Sport</th><th>Date / Time</th><th>Booked By</th>
-                        <th>Contact</th><th>Participants</th><th>Player Roster</th><th>Rate</th>
+                        <th>Contact</th><th>Participants</th><th>Player Roster</th><th>Gross Fee</th>
+                        <th>5% Admin Commission</th><th>95% Owner Payout</th><th>Payment Reference</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -68,10 +76,13 @@
                             <td>{{ booking.contact_email }}<br>{{ booking.contact_phone }}</td>
                             <td>{{ booking.participant_count }}</td>
                             <td>{{ booking.participant_names|default:"—" }}</td>
-                            <td>₱{{ booking.rate_snapshot }}/hr<br>₱{{ booking.total_price }} total</td>
+                            <td>₱{{ booking.total_price }}</td>
+                            <td>₱{{ booking.platform_fee_amount }}</td>
+                            <td>₱{{ booking.owner_payout_amount }}</td>
+                            <td><span class="payment-receipt-badge">{{ booking.get_payment_method_display }} · {{ booking.get_payment_status_display }}</span><br>{{ booking.payment_reference }}</td>
                         </tr>
                     {% empty %}
-                        <tr><td colspan="8" class="text-body-secondary">No confirmed bookings.</td></tr>
+                        <tr><td colspan="11" class="text-body-secondary">No confirmed bookings.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

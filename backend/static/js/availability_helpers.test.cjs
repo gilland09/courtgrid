@@ -5,6 +5,7 @@ require('./availability_helpers.js');
 
 const {
     calculateSlotTotal,
+    calculateFeeBreakdown,
     getSevenDayDates,
     getSlotKey,
     isValidEmail,
@@ -40,6 +41,14 @@ test('selected slots total their per-slot hourly rates', () => {
         }),
         700,
     );
+});
+
+test('commission breakdown rounds to cents and preserves the gross total', () => {
+    assert.deepEqual(calculateFeeBreakdown(500), {
+        gross: 500,
+        platformFee: 25,
+        ownerPayout: 475,
+    });
 });
 
 test('player name values survive decreasing and increasing participant count', () => {

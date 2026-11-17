@@ -174,6 +174,10 @@ class BookingCreateView(APIView):
                 status=Booking.Status.CONFIRMED,
                 rate_snapshot=hourly_rate,
                 total_price=hourly_rate,
+                payment_method=requested.get(
+                    'payment_method',
+                    Booking.PaymentMethod.GCASH,
+                ),
             )
 
         return booking
@@ -194,6 +198,7 @@ class BookingCreateView(APIView):
                     'participant_names': batch.get('participant_names', ''),
                     'contact_email': batch['contact_email'],
                     'contact_phone': batch['contact_phone'],
+                    'payment_method': batch['payment_method'],
                 })
                 serializer.is_valid(raise_exception=True)
                 validated_slots.append(serializer.validated_data)

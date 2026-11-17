@@ -148,6 +148,26 @@ function renderBookings() {
         );
         addBookingDetail(body, 'Participants', String(booking.participant_count));
         addBookingDetail(body, 'Price', `${booking.currency} ${booking.total_price}`);
+        const paymentMethods = {
+            gcash: 'GCash',
+            maya: 'Maya',
+            card: 'Credit / Debit Card',
+            cash: 'Pay at Venue',
+        };
+        addBookingDetail(
+            body,
+            'Payment method',
+            paymentMethods[booking.payment_method] || booking.payment_method || 'GCash',
+        );
+        const paymentBadge = document.createElement('span');
+        paymentBadge.className = 'payment-receipt-badge mb-2';
+        paymentBadge.textContent = booking.payment_status === 'pending'
+            ? 'Pay at Venue'
+            : booking.payment_status === 'refunded'
+                ? 'Refunded'
+                : 'Paid';
+        body.append(paymentBadge);
+        addBookingDetail(body, 'Payment reference', booking.payment_reference || 'Pending');
 
         if (
             booking.status === 'CONFIRMED'

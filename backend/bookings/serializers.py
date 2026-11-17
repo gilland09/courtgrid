@@ -36,6 +36,12 @@ class BookingSerializer(serializers.ModelSerializer):
             'status',
             'rate_snapshot',
             'total_price',
+            'platform_fee_rate',
+            'platform_fee_amount',
+            'owner_payout_amount',
+            'payment_method',
+            'payment_status',
+            'payment_reference',
             'currency',
             'created_at',
             'updated_at',
@@ -63,6 +69,11 @@ class CreateBookingSerializer(serializers.Serializer):
     )
     contact_email = serializers.EmailField(required=False, allow_blank=True)
     contact_phone = serializers.CharField(required=False, allow_blank=True, max_length=32)
+    payment_method = serializers.ChoiceField(
+        choices=Booking.PaymentMethod.choices,
+        required=False,
+        default=Booking.PaymentMethod.GCASH,
+    )
 
     def validate(self, attrs):
         start_datetime = attrs['start_datetime']
@@ -147,6 +158,11 @@ class BatchCreateBookingSerializer(serializers.Serializer):
     participant_count = serializers.IntegerField(min_value=1)
     contact_email = serializers.EmailField()
     contact_phone = serializers.CharField(max_length=32)
+    payment_method = serializers.ChoiceField(
+        choices=Booking.PaymentMethod.choices,
+        required=False,
+        default=Booking.PaymentMethod.GCASH,
+    )
     participant_names = serializers.CharField(
         required=False,
         allow_blank=True,

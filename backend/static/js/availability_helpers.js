@@ -20,6 +20,16 @@
         );
     }
 
+    function calculateFeeBreakdown(gross, feeRate = 0.05) {
+        const total = Number(gross);
+        const platformFee = Math.round((total * feeRate + Number.EPSILON) * 100) / 100;
+        return {
+            gross: total,
+            platformFee,
+            ownerPayout: Math.round((total - platformFee + Number.EPSILON) * 100) / 100,
+        };
+    }
+
     function resizePlayerNames(names, visibleValues, count) {
         const resizedNames = names.slice();
         visibleValues.forEach((value, index) => {
@@ -45,6 +55,7 @@
         getSevenDayDates,
         getSlotKey,
         calculateSlotTotal,
+        calculateFeeBreakdown,
         resizePlayerNames,
         isValidEmail,
         isValidPhone,

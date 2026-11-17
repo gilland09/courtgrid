@@ -622,6 +622,115 @@ form textarea:focus {
     text-align: right;
 }
 
+.payment-method-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+}
+
+.payment-method-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.65rem;
+    min-height: 64px;
+    padding: 0.75rem;
+    border: 1px solid rgba(112, 128, 144, 0.24);
+    border-radius: 12px;
+    cursor: pointer;
+    background: #fff;
+}
+
+.payment-method-option:has(input:checked) {
+    border-color: #1e5631;
+    background: #f0f7f1;
+    box-shadow: 0 0 0 2px rgba(30, 86, 49, 0.1);
+}
+
+.payment-method-option input {
+    margin-top: 0.2rem;
+    accent-color: #1e5631;
+}
+
+.payment-method-option span {
+    display: grid;
+    gap: 0.1rem;
+}
+
+.payment-method-option small {
+    color: #6d786f;
+    font-size: 0.76rem;
+}
+
+.payment-breakdown {
+    padding: 0.9rem 1rem;
+    border: 1px solid rgba(112, 128, 144, 0.18);
+    border-radius: 14px;
+    background: #f7f9f7;
+}
+
+.payment-breakdown > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.25rem 0;
+    font-size: 0.88rem;
+}
+
+.payment-breakdown-total {
+    margin-top: 0.4rem;
+    padding-top: 0.65rem !important;
+    border-top: 1px solid rgba(112, 128, 144, 0.2);
+    font-size: 1rem !important;
+    font-weight: 700;
+}
+
+.payment-breakdown-total strong {
+    color: #1e5631;
+}
+
+.finance-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.finance-kpi {
+    padding: 1.1rem;
+    border: 1px solid rgba(112, 128, 144, 0.18);
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 8px 24px rgba(20, 40, 28, 0.05);
+}
+
+.finance-kpi span {
+    display: block;
+    color: #6d786f;
+    font-size: 0.82rem;
+}
+
+.finance-kpi strong {
+    display: block;
+    margin-top: 0.35rem;
+    color: #263b2d;
+    font-size: 1.35rem;
+}
+
+.finance-kpi.is-revenue strong {
+    color: #1e5631;
+}
+
+.payment-receipt-badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.3rem 0.6rem;
+    color: #1e5631;
+    background: #e7f4e9;
+    font-size: 0.74rem;
+    font-weight: 700;
+}
+
 .booking-modal-content .form-control {
     border-radius: 10px;
 }
@@ -671,6 +780,18 @@ form textarea:focus {
 
 .modal-open .booking-sticky-bar {
     display: none !important;
+}
+
+@media (max-width: 767.98px) {
+    .finance-kpis {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 420px) {
+    .payment-method-options {
+        grid-template-columns: 1fr;
+    }
 }
 
 .booking-tabs {

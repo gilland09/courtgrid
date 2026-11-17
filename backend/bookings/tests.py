@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, time, timedelta
+from decimal import Decimal
 from threading import Barrier
 
 from django.contrib.auth import get_user_model
@@ -106,6 +107,12 @@ class BookingAPITests(TransactionTestCase):
         self.assertEqual(response.data['sport_name'], self.sport.name)
         self.assertEqual(response.data['rate_snapshot'], '250.00')
         self.assertEqual(response.data['total_price'], '250.00')
+        self.assertEqual(response.data['platform_fee_rate'], '0.0500')
+        self.assertEqual(response.data['platform_fee_amount'], '12.50')
+        self.assertEqual(response.data['owner_payout_amount'], '237.50')
+        self.assertEqual(response.data['payment_method'], 'gcash')
+        self.assertEqual(response.data['payment_status'], 'paid')
+        self.assertRegex(response.data['payment_reference'], r'^CG-\d{8}-[A-F0-9]{6}$')
         self.assertEqual(response.data['participant_names'], 'Alex, Sam')
         self.assertEqual(Booking.objects.get().participant_names, 'Alex, Sam')
         self.assertEqual(Booking.objects.count(), 1)
@@ -148,6 +155,43 @@ class BookingAPITests(TransactionTestCase):
             set(Booking.objects.values_list('contact_phone', flat=True)),
             {'+639171234567'},
         )
+        self.assertEqual(
+            set(Booking.objects.values_list('platform_fee_amount', flat=True)),
+            {Decimal('12.50')},
+        )
+
+    def test_cash_payment_is_pending_and_payment_method_is_returned(self):
+        response = self.create_booking(payment_method='cash')
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['payment_method'], 'cash')
+        self.assertEqual(response.data['payment_status'], 'pending')
+        self.assertEqual(response.data['platform_fee_amount'], '12.50')
+        self.assertEqual(response.data['owner_payout_amount'], '237.50')
+
+    def test_batch_booking_records_selected_payment_method(self):
+        response = self.client.post(
+            '/api/bookings/',
+            {
+                'sport_id': self.sport.pk,
+                'participant_count': 2,
+                'contact_email': 'booker@example.com',
+                'contact_phone': '+639171234567',
+                'payment_method': 'maya',
+                'slots': [{
+                    'resource_id': self.resource.pk,
+                    'start_datetime': self.start_datetime.isoformat(),
+                    'end_datetime': (self.start_datetime + timedelta(hours=1)).isoformat(),
+                }],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        booking = response.data['results'][0]
+        self.assertEqual(booking['payment_method'], 'maya')
+        self.assertEqual(booking['payment_status'], 'paid')
+        self.assertEqual(booking['payment_reference'], Booking.objects.get().payment_reference)
 
     def test_batch_booking_rolls_back_earlier_slots_when_a_later_slot_conflicts(self):
         second_start = self.start_datetime + timedelta(hours=1)

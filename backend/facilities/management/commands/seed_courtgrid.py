@@ -1,10 +1,11 @@
-from datetime import time
+from datetime import datetime, time, timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.utils import timezone
 
-from bookings.models import UserProfile
+from bookings.models import Booking, UserProfile
 from facilities.models import (
     BookableResource,
     Facility,
@@ -185,6 +186,86 @@ class Command(BaseCommand):
                         defaults={},
                     )
 
+        self.seed_demo_bookings(owner, user_model)
+        for booking in Booking.objects.all().iterator():
+            booking.save()
+
         self.stdout.write(self.style.SUCCESS(
             'CourtGrid facilities, sports, resources, and weekly schedules are ready.'
         ))
+
+    @staticmethod
+    def seed_demo_bookings(owner, user_model):
+        demo_customer, _ = user_model.objects.get_or_create(
+            username='demo_player',
+            defaults={
+                'email': 'demo_player@courtgrid.local',
+                'first_name': 'Demo',
+                'last_name': 'Player',
+            },
+        )
+        UserProfile.objects.update_or_create(
+            user=demo_customer,
+            defaults={'role': UserProfile.Role.CUSTOMER},
+        )
+        owned_facility_ids = owner.owned_facilities.values_list('pk', flat=True)
+        if Booking.objects.filter(
+            user=demo_customer,
+            resource__facility_id__in=owned_facility_ids,
+            status=Booking.Status.CONFIRMED,
+        ).exists():
+            return
+
+        demo_slots = (
+            ('BiPSU Sports Complex', 'Basketball', 'Court 3', time(18)),
+            ("Tonio's Dink District", 'Pickleball', 'Court 3', time(19)),
+        )
+        local_tomorrow = timezone.localdate() + timedelta(days=1)
+        for facility_name, sport_name, resource_name, start_time in demo_slots:
+            facility = Facility.objects.get(name=facility_name, owner=owner)
+            resource = BookableResource.objects.get(
+                facility=facility,
+                name=resource_name,
+                is_active=True,
+            )
+            sport = Sport.objects.get(name=sport_name, is_active=True)
+            facility_sport = FacilitySport.objects.get(
+                facility=facility,
+                sport=sport,
+                is_active=True,
+            )
+            hourly_rate = facility_sport.hourly_rate or facility.default_hourly_rate
+            start_datetime = timezone.make_aware(
+                datetime.combine(local_tomorrow, start_time),
+                timezone.get_current_timezone(),
+            )
+            for day_offset in range(14):
+                candidate_start = start_datetime + timedelta(days=day_offset)
+                candidate_end = candidate_start + timedelta(hours=1)
+                has_overlap = Booking.objects.filter(
+                    resource=resource,
+                    status=Booking.Status.CONFIRMED,
+                    start_datetime__lt=candidate_end,
+                    end_datetime__gt=candidate_start,
+                ).exists()
+                if not has_overlap:
+                    Booking.objects.create(
+                        user=demo_customer,
+                        resource=resource,
+                        sport=sport,
+                        start_datetime=candidate_start,
+                        end_datetime=candidate_end,
+                        participant_count=2,
+                        participant_names='Demo Player, Alex CourtGrid',
+                        contact_email=demo_customer.email,
+                        contact_phone='+639171234567',
+                        status=Booking.Status.CONFIRMED,
+                        rate_snapshot=hourly_rate,
+                        total_price=hourly_rate,
+                        payment_method=(
+                            Booking.PaymentMethod.GCASH
+                            if sport_name == 'Basketball'
+                            else Booking.PaymentMethod.MAYA
+                        ),
+                    )
+                    break

@@ -275,6 +275,20 @@ class AdminDashboardActivityTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.context['todays_bookings']), 1)
         self.assertEqual(
+            response.context['financial_totals']['gross'],
+            Decimal('200.00'),
+        )
+        self.assertEqual(
+            response.context['financial_totals']['platform_fee'],
+            Decimal('10.00'),
+        )
+        self.assertEqual(
+            response.context['financial_totals']['owner_payout'],
+            Decimal('190.00'),
+        )
+        self.assertEqual(response.context['active_verified_venues'], 0)
+        self.assertEqual(response.context['active_courts'], 0)
+        self.assertEqual(
             response.context['active_closures'].get(),
             active_closure,
         )

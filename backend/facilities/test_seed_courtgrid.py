@@ -6,6 +6,8 @@ from django.core.management import call_command
 from django.test import TestCase
 from django.utils import timezone
 
+from bookings.models import Booking
+
 from .management.commands.seed_courtgrid import FACILITIES, SPORT_RATES
 from .models import (
     BookableResource,
@@ -35,6 +37,16 @@ class SeedCourtGridCommandTests(TestCase):
         self.assertEqual(owner.courtgrid_profile.role, 'court_owner')
         self.assertTrue(owner.check_password('owner123'))
         self.assertEqual(owner.owned_facilities.count(), 5)
+        seeded_bookings = Booking.objects.filter(user__username='demo_player')
+        self.assertEqual(seeded_bookings.count(), 2)
+        self.assertTrue(all(booking.payment_reference for booking in seeded_bookings))
+        self.assertEqual(
+            sum(
+                seeded_bookings.values_list('platform_fee_amount', flat=True),
+                Decimal('0.00'),
+            ),
+            Decimal('22.50'),
+        )
 
         for facility_data in FACILITIES:
             facility = Facility.objects.get(name=facility_data['name'])

@@ -6,7 +6,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.test import TestCase
 
-from bookings.models import UserProfile
+from bookings.models import Booking, UserProfile
 
 from .models import (
     BookableResource,
@@ -188,6 +188,32 @@ class InAppManagementPortalTests(TestCase):
         self.assertRedirects(response, reverse('management_facilities'))
         self.facility.refresh_from_db()
         self.assertTrue(self.facility.is_verified)
+
+    def test_owner_dashboard_reports_commission_and_net_payout(self):
+        Booking.objects.create(
+            user=self.customer,
+            resource=self.resource,
+            sport=self.sport,
+            start_datetime=timezone.now() + timedelta(days=2),
+            end_datetime=timezone.now() + timedelta(days=2, hours=1),
+            participant_count=2,
+            rate_snapshot=Decimal('200.00'),
+            total_price=Decimal('200.00'),
+        )
+        self.client.force_login(self.owner)
+
+        response = self.client.get(reverse('owner_dashboard'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['financial_totals']['gross'], Decimal('200.00'))
+        self.assertEqual(
+            response.context['financial_totals']['platform_fee'],
+            Decimal('10.00'),
+        )
+        self.assertEqual(
+            response.context['financial_totals']['owner_payout'],
+            Decimal('190.00'),
+        )
 
     def test_customer_cannot_open_owner_or_management_portals(self):
         self.client.force_login(self.customer)

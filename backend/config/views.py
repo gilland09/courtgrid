@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.contrib import messages
 from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth import login as auth_login
@@ -5,12 +7,13 @@ from django.contrib.auth import logout as auth_logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import AuthenticationForm
 from django.db import transaction
+from django.db.models import Sum
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from bookings.models import Booking, UserProfile, get_user_role
-from facilities.models import FacilityClosure, Sport
+from facilities.models import BookableResource, Facility, FacilityClosure, Sport
 from .forms import RegistrationForm
 
 
@@ -90,10 +93,28 @@ def admin_dashboard_view(request):
         .select_related('user', 'resource__facility', 'sport')
         .order_by('start_datetime')
     )
+    financial_totals = all_bookings.aggregate(
+        gross=Sum('total_price'),
+        platform_fee=Sum('platform_fee_amount'),
+        owner_payout=Sum('owner_payout_amount'),
+    )
     return render(request, 'admin_dashboard.html', {
         'todays_bookings': todays_bookings,
         'active_closures': active_closures,
         'all_bookings': all_bookings,
+        'financial_totals': {
+            key: value or Decimal('0.00')
+            for key, value in financial_totals.items()
+        },
+        'active_verified_venues': Facility.objects.filter(
+            is_active=True,
+            is_verified=True,
+        ).count(),
+        'active_courts': BookableResource.objects.filter(
+            is_active=True,
+            facility__is_active=True,
+            facility__is_verified=True,
+        ).count(),
     })
 
 

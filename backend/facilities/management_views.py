@@ -1,8 +1,10 @@
 from functools import wraps
+from decimal import Decimal
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.db.models import Sum
 from django.shortcuts import get_object_or_404, redirect, render
 
 from bookings.models import Booking, UserProfile, get_user_role
@@ -77,6 +79,11 @@ def owner_dashboard_context(user, facility_form=None):
         .select_related('user', 'resource__facility', 'sport')
         .order_by('start_datetime')
     )
+    financial_totals = bookings.aggregate(
+        gross=Sum('total_price'),
+        platform_fee=Sum('platform_fee_amount'),
+        owner_payout=Sum('owner_payout_amount'),
+    )
     return {
         'facilities': facilities,
         'facility_panels': facility_panels,
@@ -85,6 +92,10 @@ def owner_dashboard_context(user, facility_form=None):
         'closure_form': FacilityClosureForm(facilities=facilities),
         'closures': closures,
         'venue_bookings': bookings,
+        'financial_totals': {
+            key: value or Decimal('0.00')
+            for key, value in financial_totals.items()
+        },
     }
 
 

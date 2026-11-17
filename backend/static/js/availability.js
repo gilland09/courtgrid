@@ -13,6 +13,11 @@ const bookingForm = document.getElementById('booking-confirm-form');
 const bookingFields = document.getElementById('booking-fields');
 const bookingConfirmedState = document.getElementById('booking-confirmed-state');
 const bookingConfirmedSummary = document.getElementById('booking-confirmed-summary');
+const rentalBreakdownLabel = document.getElementById('rental-breakdown-label');
+const rentalBreakdownAmount = document.getElementById('rental-breakdown-amount');
+const platformFeeBreakdown = document.getElementById('platform-fee-breakdown');
+const totalDueBreakdown = document.getElementById('total-due-breakdown');
+const paymentMethodOptions = document.querySelectorAll('[name="payment_method"]');
 const participantCount = document.getElementById('participant-count');
 const participantCapacityHelp = document.getElementById('participant-capacity-help');
 const playerNamesGrid = document.getElementById('player-names-grid');
@@ -127,6 +132,24 @@ function selectedTotal() {
     return availabilityHelpers.calculateSlotTotal(selectedSlots, sportRates);
 }
 
+function selectedPaymentMethod() {
+    return document.querySelector('[name="payment_method"]:checked')?.value || 'gcash';
+}
+
+function updatePaymentBreakdown() {
+    const gross = selectedTotal();
+    const breakdown = availabilityHelpers.calculateFeeBreakdown(gross);
+    const slotCount = selectedSlots.length;
+    const hourlyRate = slotCount ? Number(sportRates[String(selectedSlots[0].sportId)] || 0) : 0;
+    rentalBreakdownLabel.textContent = (
+        `Court Rental (${slotCount} ${slotCount === 1 ? 'slot' : 'slots'} × `
+        + `${formatCurrency(hourlyRate)}/hr)`
+    );
+    rentalBreakdownAmount.textContent = formatCurrency(breakdown.gross);
+    platformFeeBreakdown.textContent = formatCurrency(breakdown.platformFee);
+    totalDueBreakdown.textContent = formatCurrency(breakdown.gross);
+}
+
 function updateStickyBar() {
     if (selectedSlots.length === 0 || bookingModalElement.classList.contains('show')) {
         selectedSlotBar.hidden = true;
@@ -182,6 +205,7 @@ function toggleSlot(button) {
         setSlotSelected(selectedSlots[selectedSlots.length - 1], true);
     }
     updateStickyBar();
+    updatePaymentBreakdown();
 }
 
 function renderAvailabilitySlots(slots) {
@@ -398,6 +422,7 @@ function openBookingModal() {
     renderSlotSummary(bookingSummary, selectedSlots);
     appendSummaryRow(bookingSummary, 'Participants', participantCount.value || '1');
     appendSummaryRow(bookingSummary, 'Hourly rate total', formatCurrency(selectedTotal()));
+    updatePaymentBreakdown();
 
     minimumSelectedCapacity = selectedCapacity();
     participantCount.value = '1';
@@ -457,11 +482,34 @@ function showConfirmedState(payload, bookedSlots, names) {
     });
     appendSummaryRow(
         bookingConfirmedSummary,
-        'Total paid',
+        bookings[0]?.payment_status === 'pending' ? 'Total due at venue' : 'Total paid',
         formatCurrency(Number(payload.total_price ?? bookings.reduce(
             (total, booking) => total + Number(booking.total_price || 0),
             0,
         ))),
+    );
+    const paymentMethod = bookings[0]?.payment_method || 'gcash';
+    const paymentLabels = {
+        gcash: 'GCash',
+        maya: 'Maya',
+        card: 'Credit / Debit Card',
+        cash: 'Pay at Venue',
+    };
+    const paymentStatus = bookings[0]?.payment_status || (
+        paymentMethod === 'cash' ? 'pending' : 'paid'
+    );
+    const references = [...new Set(
+        bookings.map((booking) => booking.payment_reference).filter(Boolean),
+    )];
+    appendSummaryRow(
+        bookingConfirmedSummary,
+        'Payment',
+        `${paymentStatus === 'paid' ? 'PAID VIA' : 'PAY AT VENUE'} ${paymentLabels[paymentMethod] || paymentMethod}`,
+    );
+    appendSummaryRow(
+        bookingConfirmedSummary,
+        'Payment reference',
+        references.join(', ') || 'Pending reference',
     );
     appendSummaryRow(
         bookingConfirmedSummary,
@@ -523,6 +571,7 @@ async function submitBooking(event) {
                 participant_names: names.join(', '),
                 contact_email: bookerEmail.value.trim(),
                 contact_phone: bookerPhone.value.trim(),
+                payment_method: selectedPaymentMethod(),
                 slots: bookedSlots.map((slot) => ({
                     resource_id: slot.resourceId,
                     start_datetime: slot.startTime,
@@ -609,6 +658,9 @@ bookerPhone.addEventListener('input', () => {
     }
 });
 bookingForm.addEventListener('submit', submitBooking);
+paymentMethodOptions.forEach((option) => {
+    option.addEventListener('change', updatePaymentBreakdown);
+});
 
 bookingModalElement.addEventListener('show.bs.modal', () => {
     selectedSlotBar.hidden = true;
