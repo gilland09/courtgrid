@@ -110,6 +110,103 @@ class BookingAPITests(TransactionTestCase):
         self.assertEqual(Booking.objects.get().participant_names, 'Alex, Sam')
         self.assertEqual(Booking.objects.count(), 1)
 
+    def test_batch_booking_creates_multiple_slots_atomically_with_total(self):
+        second_start = self.start_datetime + timedelta(hours=1)
+        response = self.client.post(
+            '/api/bookings/',
+            {
+                'sport_id': self.sport.pk,
+                'participant_count': 3,
+                'participant_names': 'Alex, Sam, Jo',
+                'contact_email': 'booker@example.com',
+                'contact_phone': '+639171234567',
+                'slots': [
+                    {
+                        'resource_id': self.resource.pk,
+                        'start_datetime': self.start_datetime.isoformat(),
+                        'end_datetime': (self.start_datetime + timedelta(hours=1)).isoformat(),
+                    },
+                    {
+                        'resource_id': self.resource.pk,
+                        'start_datetime': second_start.isoformat(),
+                        'end_datetime': (second_start + timedelta(hours=1)).isoformat(),
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(len(response.data['results']), 2)
+        self.assertEqual(response.data['total_price'], '500.00')
+        self.assertEqual(Booking.objects.count(), 2)
+        self.assertEqual(
+            set(Booking.objects.values_list('contact_email', flat=True)),
+            {'booker@example.com'},
+        )
+        self.assertEqual(
+            set(Booking.objects.values_list('contact_phone', flat=True)),
+            {'+639171234567'},
+        )
+
+    def test_batch_booking_rolls_back_earlier_slots_when_a_later_slot_conflicts(self):
+        second_start = self.start_datetime + timedelta(hours=1)
+        existing = Booking.objects.create(
+            user=self.user,
+            resource=self.resource,
+            sport=self.sport,
+            start_datetime=second_start,
+            end_datetime=second_start + timedelta(hours=1),
+            participant_count=2,
+            rate_snapshot='250.00',
+            total_price='250.00',
+        )
+        response = self.client.post(
+            '/api/bookings/',
+            {
+                'sport_id': self.sport.pk,
+                'participant_count': 2,
+                'contact_email': 'booker@example.com',
+                'contact_phone': '+639171234567',
+                'slots': [
+                    {
+                        'resource_id': self.resource.pk,
+                        'start_datetime': self.start_datetime.isoformat(),
+                        'end_datetime': (self.start_datetime + timedelta(hours=1)).isoformat(),
+                    },
+                    {
+                        'resource_id': self.resource.pk,
+                        'start_datetime': second_start.isoformat(),
+                        'end_datetime': (second_start + timedelta(hours=1)).isoformat(),
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(list(Booking.objects.values_list('pk', flat=True)), [existing.pk])
+
+    def test_batch_booking_requires_valid_contact_details(self):
+        response = self.client.post(
+            '/api/bookings/',
+            {
+                'sport_id': self.sport.pk,
+                'participant_count': 2,
+                'contact_email': 'not-an-email',
+                'contact_phone': '123',
+                'slots': [{
+                    'resource_id': self.resource.pk,
+                    'start_datetime': self.start_datetime.isoformat(),
+                    'end_datetime': (self.start_datetime + timedelta(hours=1)).isoformat(),
+                }],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Booking.objects.count(), 0)
+
     def test_facility_default_rate_is_used_when_sport_rate_is_unset(self):
         self.facility_sport.hourly_rate = None
         self.facility_sport.save(update_fields=('hourly_rate',))

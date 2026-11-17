@@ -74,7 +74,7 @@
     </section>
 </section>
 
-<div id="selected-slot-bar" class="selected-slot-bar" hidden>
+<div id="selected-slot-bar" class="selected-slot-bar booking-sticky-bar" hidden>
     <span id="selected-slot-label">1 slot selected</span>
     <button id="continue-booking" type="button" class="btn btn-primary">Continue to Confirm</button>
 </div>
@@ -92,34 +92,47 @@
             <div class="modal-body">
                 <div id="booking-summary" class="booking-summary mb-3"></div>
                 <div id="booking-result" class="mb-3" aria-live="polite"></div>
-                <form id="booking-confirm-form">
-                    <div class="mb-3">
-                        <label for="participant-count" class="form-label">Number of participants</label>
-                        <input id="participant-count" name="participant_count" type="number" class="form-control" min="1" value="1" required>
-                        <div id="participant-capacity-help" class="form-text"></div>
-                    </div>
-                    <div class="mb-3">
-                        <label for="participant-names" class="form-label">Player names <span class="text-body-secondary">(optional)</span></label>
-                        <textarea id="participant-names" name="participant_names" class="form-control" rows="2" maxlength="2000" placeholder="Add one or more names"></textarea>
-                    </div>
-                    <div class="row g-3">
-                        <div class="col-sm-6">
-                            <label for="booker-email" class="form-label">Contact email</label>
-                            <input id="booker-email" type="email" class="form-control" value="{{ booker_email }}" readonly>
+                <form id="booking-confirm-form" novalidate>
+                    <div id="booking-fields">
+                        <div class="mb-3">
+                            <label for="participant-count" class="form-label">Number of participants</label>
+                            <input id="participant-count" name="participant_count" type="number" class="form-control" min="1" value="1" required>
+                            <div id="participant-capacity-help" class="form-text"></div>
                         </div>
-                        <div class="col-sm-6">
-                            <label for="booker-phone" class="form-label">Phone</label>
-                            <input id="booker-phone" type="tel" class="form-control" value="{{ booker_phone }}" readonly>
+                        <fieldset class="mb-3">
+                            <legend class="form-label mb-1">Player names <span class="text-body-secondary">(optional)</span></legend>
+                            <div id="player-names-grid" class="player-names-grid"></div>
+                        </fieldset>
+                        <div class="row g-3">
+                            <div class="col-sm-6">
+                                <label for="booker-email" class="form-label">Contact email <span class="text-danger fw-bold">*</span></label>
+                                <input id="booker-email" name="contact_email" type="email" class="form-control" value="{{ booker_email }}" autocomplete="email" required aria-describedby="booker-email-error">
+                                <div id="booker-email-error" class="invalid-feedback"></div>
+                            </div>
+                            <div class="col-sm-6">
+                                <label for="booker-phone" class="form-label">Phone <span class="text-danger fw-bold">*</span></label>
+                                <input id="booker-phone" name="contact_phone" type="tel" class="form-control" value="{{ booker_phone }}" autocomplete="tel" required aria-describedby="booker-phone-error">
+                                <div id="booker-phone-error" class="invalid-feedback"></div>
+                            </div>
                         </div>
-                    </div>
-                    {% if not user.is_authenticated %}
-                        <p class="small text-body-secondary mt-3 mb-0">Sign in to confirm your reservation and add contact details.</p>
-                    {% endif %}
-                    <div class="d-flex gap-2 mt-4">
-                        <button type="button" class="btn btn-outline-secondary flex-fill" data-bs-dismiss="modal">Cancel</button>
-                        <button id="confirm-booking" type="submit" class="btn btn-primary flex-fill">Confirm Booking</button>
+                        {% if not user.is_authenticated %}
+                            <p class="small text-body-secondary mt-3 mb-0">Sign in to confirm your reservation.</p>
+                        {% endif %}
+                        <div class="d-flex gap-2 mt-4">
+                            <button type="button" class="btn btn-outline-secondary flex-fill" data-bs-dismiss="modal">Cancel</button>
+                            <button id="confirm-booking" type="submit" class="btn btn-primary flex-fill">Confirm Booking</button>
+                        </div>
                     </div>
                 </form>
+                <section id="booking-confirmed-state" class="booking-confirmed-state" hidden aria-live="polite">
+                    <div class="booking-confirmed-icon" aria-hidden="true">✓</div>
+                    <h3 class="h4 text-center">Booking confirmed</h3>
+                    <div id="booking-confirmed-summary" class="booking-summary mb-4"></div>
+                    <div class="d-grid gap-2">
+                        <a class="btn btn-primary auth-submit" href="/my-bookings/">View My Bookings</a>
+                        <button id="book-more-slots" type="button" class="btn btn-outline-secondary booking-more-button">Book More Slots</button>
+                    </div>
+                </section>
             </div>
         </section>
     </div>
@@ -130,5 +143,6 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{% static 'js/availability_helpers.js' %}"></script>
 <script src="{% static 'js/availability.js' %}"></script>
 {% endblock %}

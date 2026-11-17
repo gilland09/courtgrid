@@ -1,3 +1,4 @@
+import re
 from datetime import timedelta
 
 from django.utils import timezone
@@ -30,6 +31,8 @@ class BookingSerializer(serializers.ModelSerializer):
             'end_datetime',
             'participant_count',
             'participant_names',
+            'contact_email',
+            'contact_phone',
             'status',
             'rate_snapshot',
             'total_price',
@@ -58,6 +61,8 @@ class CreateBookingSerializer(serializers.Serializer):
         allow_blank=True,
         max_length=2000,
     )
+    contact_email = serializers.EmailField(required=False, allow_blank=True)
+    contact_phone = serializers.CharField(required=False, allow_blank=True, max_length=32)
 
     def validate(self, attrs):
         start_datetime = attrs['start_datetime']
@@ -127,3 +132,44 @@ class CreateBookingSerializer(serializers.Serializer):
             })
 
         return attrs
+
+
+class BookingSlotInputSerializer(serializers.Serializer):
+    resource_id = serializers.PrimaryKeyRelatedField(
+        queryset=BookableResource.objects.all(),
+    )
+    start_datetime = serializers.DateTimeField()
+    end_datetime = serializers.DateTimeField()
+
+
+class BatchCreateBookingSerializer(serializers.Serializer):
+    sport_id = serializers.PrimaryKeyRelatedField(queryset=Sport.objects.all())
+    participant_count = serializers.IntegerField(min_value=1)
+    contact_email = serializers.EmailField()
+    contact_phone = serializers.CharField(max_length=32)
+    participant_names = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=2000,
+    )
+    slots = BookingSlotInputSerializer(many=True, allow_empty=False, max_length=20)
+
+    def validate_slots(self, slots):
+        keys = [
+            (slot['resource_id'].pk, slot['start_datetime'])
+            for slot in slots
+        ]
+        if len(keys) != len(set(keys)):
+            raise serializers.ValidationError(
+                'A court and start time can only appear once in a booking request.'
+            )
+        return slots
+
+    def validate_contact_phone(self, value):
+        if (
+            not value.strip()
+            or len([character for character in value if character.isdigit()]) < 7
+            or not re.fullmatch(r'\+?[0-9][0-9\s().-]{5,30}', value.strip())
+        ):
+            raise serializers.ValidationError('Enter a valid phone number with at least 7 digits.')
+        return value.strip()

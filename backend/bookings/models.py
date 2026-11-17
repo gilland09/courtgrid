@@ -42,6 +42,8 @@ class Booking(models.Model):
     end_datetime = models.DateTimeField()
     participant_count = models.PositiveIntegerField(validators=[MinValueValidator(1)])
     participant_names = models.TextField(blank=True)
+    contact_email = models.EmailField(blank=True)
+    contact_phone = models.CharField(max_length=32, blank=True)
     status = models.CharField(
         max_length=10,
         choices=Status.choices,

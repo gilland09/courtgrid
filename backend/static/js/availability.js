@@ -10,14 +10,36 @@ const bookingModal = new bootstrap.Modal(bookingModalElement);
 const bookingSummary = document.getElementById('booking-summary');
 const bookingResult = document.getElementById('booking-result');
 const bookingForm = document.getElementById('booking-confirm-form');
+const bookingFields = document.getElementById('booking-fields');
+const bookingConfirmedState = document.getElementById('booking-confirmed-state');
+const bookingConfirmedSummary = document.getElementById('booking-confirmed-summary');
 const participantCount = document.getElementById('participant-count');
 const participantCapacityHelp = document.getElementById('participant-capacity-help');
+const playerNamesGrid = document.getElementById('player-names-grid');
+const bookerEmail = document.getElementById('booker-email');
+const bookerPhone = document.getElementById('booker-phone');
 const confirmBookingButton = document.getElementById('confirm-booking');
 const facilityResources = JSON.parse(document.getElementById('facility-resources-data').textContent);
 const sportRates = JSON.parse(document.getElementById('sport-rates-data').textContent);
+const baseToday = availabilityDate.value || getManilaToday();
+const availabilityHelpers = window.CourtGridAvailabilityHelpers;
 
-let selectedSlot = null;
-let selectedSlotButton = null;
+let selectedSlots = [];
+let slotButtons = new Map();
+let playerNames = [];
+let minimumSelectedCapacity = null;
+let availabilityRequest = 0;
+
+function getManilaToday() {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Manila',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).formatToParts(new Date());
+    const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+    return `${values.year}-${values.month}-${values.day}`;
+}
 
 function formatSlotTime(value) {
     return new Intl.DateTimeFormat('en-PH', {
@@ -35,28 +57,23 @@ function formatDate(value) {
     }).format(new Date(`${value}T12:00:00+08:00`));
 }
 
-function createDateValue(date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+function formatCurrency(value) {
+    return new Intl.NumberFormat('en-PH', {
+        style: 'currency',
+        currency: 'PHP',
+    }).format(value);
 }
 
 function renderQuickDates() {
     quickDatePills.replaceChildren();
-    const [year, month, day] = availabilityDate.value.split('-').map(Number);
-    const firstDate = new Date(year, month - 1, day);
-    const todayValue = availabilityDate.value;
-
-    for (let offset = 0; offset < 7; offset += 1) {
-        const date = new Date(firstDate);
-        date.setDate(firstDate.getDate() + offset);
-        const value = createDateValue(date);
+    availabilityHelpers.getSevenDayDates(baseToday).forEach((value, offset) => {
+        const date = new Date(`${value}T00:00:00Z`);
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'quick-date-pill';
         button.dataset.date = value;
-        button.setAttribute('aria-pressed', String(value === todayValue));
+        button.classList.toggle('active', value === availabilityDate.value);
+        button.setAttribute('aria-pressed', String(value === availabilityDate.value));
 
         const dayLabel = document.createElement('span');
         dayLabel.className = 'quick-date-day';
@@ -64,22 +81,28 @@ function renderQuickDates() {
             ? 'Today'
             : offset === 1
                 ? 'Tomorrow'
-                : new Intl.DateTimeFormat('en-PH', { weekday: 'short' }).format(date);
+                : new Intl.DateTimeFormat('en-PH', {
+                    weekday: 'short',
+                    timeZone: 'UTC',
+                }).format(date);
         const dateLabel = document.createElement('span');
         dateLabel.className = 'quick-date-number';
         dateLabel.textContent = new Intl.DateTimeFormat('en-PH', {
             month: 'short',
             day: 'numeric',
+            timeZone: 'UTC',
         }).format(date);
         button.append(dayLabel, dateLabel);
-        button.addEventListener('click', () => {
-            availabilityDate.value = value;
-            renderQuickDates();
-            clearSelectedSlot();
-            searchAvailability();
-        });
         quickDatePills.append(button);
-    }
+    });
+}
+
+function updateActiveDatePill() {
+    quickDatePills.querySelectorAll('[data-date]').forEach((pill) => {
+        const active = pill.dataset.date === availabilityDate.value;
+        pill.classList.toggle('active', active);
+        pill.setAttribute('aria-pressed', String(active));
+    });
 }
 
 function showAvailabilityMessage(message, type = 'info') {
@@ -91,41 +114,78 @@ function showAvailabilityMessage(message, type = 'info') {
 }
 
 function resourceForSlot(slot) {
-    return facilityResources.find((resource) => resource.id === slot.resource_id)
-        || { id: slot.resource_id, name: `Court ${slot.resource_id}`, capacity: null };
+    const resourceId = Number(slot.resourceId ?? slot.resource_id);
+    const resource = facilityResources.find((item) => item.id === resourceId);
+    return resource || {
+        id: resourceId,
+        name: slot.resource_name || (Number.isFinite(resourceId) ? `Court ${resourceId}` : 'Court'),
+        capacity: null,
+    };
 }
 
-function clearSelectedSlot() {
-    if (selectedSlotButton) {
-        selectedSlotButton.classList.remove('is-selected');
-        selectedSlotButton.setAttribute('aria-pressed', 'false');
-    }
-    selectedSlot = null;
-    selectedSlotButton = null;
-    selectedSlotBar.hidden = true;
+function selectedTotal() {
+    return availabilityHelpers.calculateSlotTotal(selectedSlots, sportRates);
 }
 
-function selectSlot(button) {
-    if (selectedSlotButton === button) {
-        clearSelectedSlot();
+function updateStickyBar() {
+    if (selectedSlots.length === 0 || bookingModalElement.classList.contains('show')) {
+        selectedSlotBar.hidden = true;
+        selectedSlotBar.classList.add('d-none');
         return;
     }
-    clearSelectedSlot();
-    selectedSlotButton = button;
-    selectedSlotButton.classList.add('is-selected');
-    selectedSlotButton.setAttribute('aria-pressed', 'true');
-    selectedSlot = {
-        resourceId: Number(button.dataset.resourceId),
-        sportId: Number(button.dataset.sportId),
-        startTime: button.dataset.startTime,
-        endTime: button.dataset.endTime,
-    };
-    const resource = resourceForSlot(selectedSlot);
-    selectedSlotLabel.textContent = `1 slot selected · ${resource.name} · ${formatSlotTime(selectedSlot.startTime)}`;
+    const details = selectedSlots.slice(0, 2).map((slot) => {
+        const resource = resourceForSlot(slot);
+        return `${resource.name} (${formatSlotTime(slot.startTime)}–${formatSlotTime(slot.endTime)})`;
+    });
+    if (selectedSlots.length > details.length) {
+        details.push(`+${selectedSlots.length - details.length} more`);
+    }
+    selectedSlotLabel.textContent = (
+        `${selectedSlots.length} ${selectedSlots.length === 1 ? 'slot' : 'slots'} selected · `
+        + `${details.join(' · ')} · ${formatCurrency(selectedTotal())} total`
+    );
     selectedSlotBar.hidden = false;
+    selectedSlotBar.classList.remove('d-none');
+}
+
+function setSlotSelected(slot, selected) {
+    const button = slotButtons.get(slot.key);
+    if (!button) {
+        return;
+    }
+    button.classList.toggle('is-selected', selected);
+    button.setAttribute('aria-pressed', String(selected));
+}
+
+function clearSelectedSlots() {
+    selectedSlots.forEach((slot) => setSlotSelected(slot, false));
+    selectedSlots = [];
+    updateStickyBar();
+}
+
+function toggleSlot(button) {
+    const resourceId = Number(button.dataset.resourceId);
+    const startTime = button.dataset.startTime;
+    const key = availabilityHelpers.getSlotKey(resourceId, startTime);
+    const existingIndex = selectedSlots.findIndex((slot) => slot.key === key);
+    if (existingIndex >= 0) {
+        const [removed] = selectedSlots.splice(existingIndex, 1);
+        setSlotSelected(removed, false);
+    } else {
+        selectedSlots.push({
+            key,
+            resourceId,
+            sportId: Number(button.dataset.sportId),
+            startTime,
+            endTime: button.dataset.endTime,
+        });
+        setSlotSelected(selectedSlots[selectedSlots.length - 1], true);
+    }
+    updateStickyBar();
 }
 
 function renderAvailabilitySlots(slots) {
+    slotButtons = new Map();
     const slotsByResource = new Map();
     slots.forEach((slot) => {
         if (!slotsByResource.has(slot.resource_id)) {
@@ -136,7 +196,7 @@ function renderAvailabilitySlots(slots) {
 
     const scheduleGrid = document.createElement('div');
     scheduleGrid.className = 'row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3';
-    slotsByResource.forEach((resourceSlots, resourceId) => {
+    slotsByResource.forEach((resourceSlots) => {
         const resource = resourceForSlot(resourceSlots[0]);
         const column = document.createElement('div');
         column.className = 'col';
@@ -165,11 +225,10 @@ function renderAvailabilitySlots(slots) {
             button.dataset.startTime = slot.start_datetime;
             button.dataset.endTime = slot.end_datetime;
             button.dataset.sportId = slot.sport_id;
-            button.dataset.resource = slot.resource_id;
-            button.dataset.start = slot.start_datetime;
-            button.dataset.end = slot.end_datetime;
             button.setAttribute('aria-pressed', 'false');
             button.textContent = `${formatSlotTime(slot.start_datetime)} – ${formatSlotTime(slot.end_datetime)}`;
+            const key = availabilityHelpers.getSlotKey(slot.resource_id, slot.start_datetime);
+            slotButtons.set(key, button);
             slotsContainer.append(button);
         });
 
@@ -187,7 +246,7 @@ async function searchAvailability() {
         showAvailabilityMessage('Choose a date and sport to view available courts.', 'warning');
         return;
     }
-
+    const requestId = ++availabilityRequest;
     const loading = document.createElement('p');
     loading.className = 'text-body-secondary';
     loading.textContent = 'Checking court availability…';
@@ -207,8 +266,10 @@ async function searchAvailability() {
         if (!response.ok) {
             throw new Error(`Availability request failed with status ${response.status}.`);
         }
-
         const payload = await response.json();
+        if (requestId !== availabilityRequest) {
+            return;
+        }
         if (!Array.isArray(payload.results)) {
             throw new Error('Availability response did not contain a results list.');
         }
@@ -218,6 +279,9 @@ async function searchAvailability() {
         }
         renderAvailabilitySlots(payload.results);
     } catch (error) {
+        if (requestId !== availabilityRequest) {
+            return;
+        }
         console.error('Unable to load availability.', error);
         showAvailabilityMessage('Availability could not be loaded. Please try again later.', 'danger');
     }
@@ -244,38 +308,113 @@ function appendSummaryRow(container, label, value) {
     container.append(row);
 }
 
+function selectedCapacity() {
+    const capacities = selectedSlots
+        .map((slot) => resourceForSlot(slot).capacity)
+        .filter((capacity) => Number.isInteger(capacity) && capacity > 0);
+    return capacities.length ? Math.min(...capacities) : null;
+}
+
+function updatePlayerNameInputs() {
+    const count = Math.max(1, Math.min(100, Number(participantCount.value) || 1));
+    const visibleValues = Array.from(
+        playerNamesGrid.querySelectorAll('[data-player-name]'),
+        (input) => input.value,
+    );
+    playerNames = availabilityHelpers.resizePlayerNames(
+        playerNames,
+        visibleValues,
+        count,
+    );
+    playerNamesGrid.replaceChildren();
+    for (let index = 0; index < count; index += 1) {
+        const column = document.createElement('div');
+        column.className = 'player-name-field';
+        const label = document.createElement('label');
+        label.className = 'form-label';
+        label.htmlFor = `player-name-${index + 1}`;
+        label.textContent = `Player ${index + 1} Name`;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.id = label.htmlFor;
+        input.className = 'form-control';
+        input.maxLength = 100;
+        input.dataset.playerName = index + 1;
+        input.value = playerNames[index] || '';
+        input.autocomplete = 'off';
+        input.addEventListener('input', () => {
+            playerNames[index] = input.value;
+        });
+        column.append(label, input);
+        playerNamesGrid.append(column);
+    }
+}
+
+function validateContactInput(input, errorElement, message, isValid) {
+    const valid = isValid(input.value.trim());
+    input.classList.toggle('is-invalid', !valid);
+    errorElement.textContent = valid ? '' : message;
+    return valid;
+}
+
+function validateBookingForm() {
+    const emailError = document.getElementById('booker-email-error');
+    const phoneError = document.getElementById('booker-phone-error');
+    const emailValid = validateContactInput(
+        bookerEmail,
+        emailError,
+        'Enter a valid contact email address.',
+        availabilityHelpers.isValidEmail,
+    );
+    const phoneValid = validateContactInput(
+        bookerPhone,
+        phoneError,
+        'Enter a valid phone number with at least 7 digits.',
+        availabilityHelpers.isValidPhone,
+    );
+    return emailValid && phoneValid;
+}
+
+function renderSlotSummary(container, slots) {
+    container.replaceChildren();
+    slots.forEach((slot) => {
+        const resource = resourceForSlot(slot);
+        appendSummaryRow(
+            container,
+            resource.name,
+            `${formatDate(availabilityDate.value)} · ${formatSlotTime(slot.startTime)}–${formatSlotTime(slot.endTime)}`,
+        );
+    });
+}
+
 function openBookingModal() {
-    if (!selectedSlot) {
+    if (selectedSlots.length === 0) {
         return;
     }
-    const resource = resourceForSlot(selectedSlot);
     const sportName = availabilitySport.selectedOptions[0].textContent.trim();
-    const rate = sportRates[String(selectedSlot.sportId)];
     bookingSummary.replaceChildren();
     appendSummaryRow(bookingSummary, 'Facility', facilityDetail.dataset.facilityName);
-    appendSummaryRow(bookingSummary, 'Court', resource.name);
     appendSummaryRow(bookingSummary, 'Sport', sportName);
-    appendSummaryRow(bookingSummary, 'Date', formatDate(availabilityDate.value));
-    appendSummaryRow(
-        bookingSummary,
-        'Time',
-        `${formatSlotTime(selectedSlot.startTime)} – ${formatSlotTime(selectedSlot.endTime)} (Asia/Manila)`,
-    );
-    appendSummaryRow(
-        bookingSummary,
-        'Hourly rate',
-        rate ? `₱${Number(rate).toFixed(2)} / hour` : 'Rate on request',
-    );
+    renderSlotSummary(bookingSummary, selectedSlots);
+    appendSummaryRow(bookingSummary, 'Participants', participantCount.value || '1');
+    appendSummaryRow(bookingSummary, 'Hourly rate total', formatCurrency(selectedTotal()));
 
+    minimumSelectedCapacity = selectedCapacity();
     participantCount.value = '1';
-    if (resource.capacity) {
-        participantCount.max = resource.capacity;
-        participantCapacityHelp.textContent = `Maximum ${resource.capacity} participants for this court.`;
+    if (minimumSelectedCapacity) {
+        participantCount.max = minimumSelectedCapacity;
+        participantCapacityHelp.textContent = (
+            `Maximum ${minimumSelectedCapacity} participants across the selected courts.`
+        );
     } else {
         participantCount.removeAttribute('max');
         participantCapacityHelp.textContent = 'Enter at least one participant.';
     }
+    playerNames = [];
+    updatePlayerNameInputs();
     bookingResult.replaceChildren();
+    bookingFields.hidden = false;
+    bookingConfirmedState.hidden = true;
     bookingModal.show();
 }
 
@@ -305,30 +444,68 @@ function showBookingError(messages, type = 'danger') {
     bookingResult.replaceChildren(alert);
 }
 
+function showConfirmedState(payload, bookedSlots, names) {
+    const bookings = Array.isArray(payload.results) ? payload.results : [payload];
+    bookingConfirmedSummary.replaceChildren();
+    bookings.forEach((booking, index) => {
+        const originalSlot = bookedSlots[index];
+        appendSummaryRow(
+            bookingConfirmedSummary,
+            booking.resource_name || resourceForSlot(originalSlot).name,
+            `${formatDate(availabilityDate.value)} · ${formatSlotTime(booking.start_datetime)}–${formatSlotTime(booking.end_datetime)}`,
+        );
+    });
+    appendSummaryRow(
+        bookingConfirmedSummary,
+        'Total paid',
+        formatCurrency(Number(payload.total_price ?? bookings.reduce(
+            (total, booking) => total + Number(booking.total_price || 0),
+            0,
+        ))),
+    );
+    appendSummaryRow(
+        bookingConfirmedSummary,
+        'Players',
+        names.length ? names.join(', ') : 'Names not provided',
+    );
+    bookingFields.hidden = true;
+    bookingResult.replaceChildren();
+    bookingConfirmedState.hidden = false;
+}
+
 async function submitBooking(event) {
     event.preventDefault();
-    if (!selectedSlot) {
-        showBookingError(['Select an available court slot first.']);
+    if (selectedSlots.length === 0) {
+        showBookingError(['Select at least one available court slot first.']);
+        return;
+    }
+    if (!validateBookingForm()) {
         return;
     }
 
     const count = Number(participantCount.value);
-    const capacity = resourceForSlot(selectedSlot).capacity;
-    if (!Number.isInteger(count) || count < 1 || (capacity && count > capacity)) {
+    if (
+        !Number.isInteger(count)
+        || count < 1
+        || (minimumSelectedCapacity && count > minimumSelectedCapacity)
+    ) {
         participantCount.setCustomValidity(
-            capacity ? `Enter a number from 1 to ${capacity}.` : 'Enter a whole number greater than zero.',
+            minimumSelectedCapacity
+                ? `Enter a number from 1 to ${minimumSelectedCapacity}.`
+                : 'Enter a whole number greater than zero.',
         );
         participantCount.reportValidity();
         return;
     }
     participantCount.setCustomValidity('');
-
     const csrfToken = getCsrfToken();
     if (!csrfToken) {
         showBookingError(['Unable to verify your session. Reload the page and try again.']);
         return;
     }
 
+    const bookedSlots = selectedSlots.map((slot) => ({ ...slot }));
+    const names = playerNames.map((name) => name.trim()).filter(Boolean);
     confirmBookingButton.disabled = true;
     confirmBookingButton.textContent = 'Confirming…';
     try {
@@ -341,27 +518,22 @@ async function submitBooking(event) {
                 'X-CSRFToken': csrfToken,
             },
             body: JSON.stringify({
-                resource_id: selectedSlot.resourceId,
-                sport_id: selectedSlot.sportId,
-                start_datetime: selectedSlot.startTime,
-                end_datetime: selectedSlot.endTime,
+                sport_id: bookedSlots[0].sportId,
                 participant_count: count,
-                participant_names: document.getElementById('participant-names').value,
+                participant_names: names.join(', '),
+                contact_email: bookerEmail.value.trim(),
+                contact_phone: bookerPhone.value.trim(),
+                slots: bookedSlots.map((slot) => ({
+                    resource_id: slot.resourceId,
+                    start_datetime: slot.startTime,
+                    end_datetime: slot.endTime,
+                })),
             }),
         });
         const payload = await response.json().catch(() => null);
         if (response.status === 201) {
-            const alert = document.createElement('div');
-            alert.className = 'alert alert-success';
-            alert.setAttribute('role', 'status');
-            alert.append(document.createTextNode('Booking confirmed. '));
-            const link = document.createElement('a');
-            link.href = '/my-bookings/';
-            link.className = 'alert-link';
-            link.textContent = 'View My Bookings';
-            alert.append(link);
-            bookingResult.replaceChildren(alert);
-            clearSelectedSlot();
+            showConfirmedState(payload, bookedSlots, names);
+            clearSelectedSlots();
             searchAvailability();
             return;
         }
@@ -384,22 +556,24 @@ async function submitBooking(event) {
 
 quickDatePills.addEventListener('click', (event) => {
     const datePill = event.target.closest('[data-date]');
-    if (datePill) {
-        quickDatePills.querySelectorAll('[data-date]').forEach((pill) => {
-            pill.setAttribute('aria-pressed', String(pill === datePill));
-        });
+    if (!datePill || datePill.dataset.date === availabilityDate.value) {
+        return;
     }
+    availabilityDate.value = datePill.dataset.date;
+    updateActiveDatePill();
+    clearSelectedSlots();
+    searchAvailability();
 });
 
 availabilitySport.addEventListener('change', () => {
-    clearSelectedSlot();
+    clearSelectedSlots();
     searchAvailability();
 });
 
 availabilityResults.addEventListener('click', (event) => {
     const button = event.target.closest('.slot-button');
     if (button && availabilityResults.contains(button)) {
-        selectSlot(button);
+        toggleSlot(button);
     }
 });
 
@@ -409,8 +583,49 @@ selectedSlotBar.addEventListener('click', (event) => {
     }
 });
 
-participantCount.addEventListener('input', () => participantCount.setCustomValidity(''));
+participantCount.addEventListener('input', () => {
+    participantCount.setCustomValidity('');
+    updatePlayerNameInputs();
+});
+
+bookerEmail.addEventListener('input', () => {
+    if (bookerEmail.classList.contains('is-invalid')) {
+        validateContactInput(
+            bookerEmail,
+            document.getElementById('booker-email-error'),
+            'Enter a valid contact email address.',
+            availabilityHelpers.isValidEmail,
+        );
+    }
+});
+bookerPhone.addEventListener('input', () => {
+    if (bookerPhone.classList.contains('is-invalid')) {
+        validateContactInput(
+            bookerPhone,
+            document.getElementById('booker-phone-error'),
+            'Enter a valid phone number with at least 7 digits.',
+            availabilityHelpers.isValidPhone,
+        );
+    }
+});
 bookingForm.addEventListener('submit', submitBooking);
 
+bookingModalElement.addEventListener('show.bs.modal', () => {
+    selectedSlotBar.hidden = true;
+    selectedSlotBar.classList.add('d-none');
+});
+bookingModalElement.addEventListener('hidden.bs.modal', updateStickyBar);
+
+document.getElementById('book-more-slots').addEventListener('click', () => {
+    bookingConfirmedState.hidden = true;
+    bookingFields.hidden = false;
+    playerNames = [];
+    bookingForm.reset();
+    playerNamesGrid.replaceChildren();
+    bookingModal.hide();
+});
+
 renderQuickDates();
+updateActiveDatePill();
+updatePlayerNameInputs();
 searchAvailability();

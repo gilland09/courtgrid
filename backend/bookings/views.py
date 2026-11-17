@@ -11,7 +11,11 @@ from facilities.availability import slot_unavailability_reason
 from facilities.models import BookableResource, FacilitySport, ResourceSport
 
 from .models import Booking
-from .serializers import BookingSerializer, CreateBookingSerializer
+from .serializers import (
+    BatchCreateBookingSerializer,
+    BookingSerializer,
+    CreateBookingSerializer,
+)
 
 
 class BookingConflict(APIException):
@@ -56,11 +60,7 @@ class BookingCreateView(APIView):
         if reason is not None:
             raise ValidationError({'start_datetime': reason})
 
-    def post(self, request):
-        serializer = CreateBookingSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        requested = serializer.validated_data
-
+    def create_booking(self, requested, user):
         initial_facility_sport = FacilitySport.objects.filter(
             facility=requested['resource'].facility,
             sport=requested['sport'],
@@ -162,18 +162,66 @@ class BookingCreateView(APIView):
                 raise BookingConflict()
 
             booking = Booking.objects.create(
-                user=request.user,
+                user=user,
                 resource=resource,
                 sport=sport,
                 start_datetime=start_datetime,
                 end_datetime=end_datetime,
                 participant_count=requested['participant_count'],
                 participant_names=requested.get('participant_names', ''),
+                contact_email=requested.get('contact_email', ''),
+                contact_phone=requested.get('contact_phone', ''),
                 status=Booking.Status.CONFIRMED,
                 rate_snapshot=hourly_rate,
                 total_price=hourly_rate,
             )
 
+        return booking
+
+    def post(self, request):
+        if 'slots' in request.data:
+            batch_serializer = BatchCreateBookingSerializer(data=request.data)
+            batch_serializer.is_valid(raise_exception=True)
+            batch = batch_serializer.validated_data
+            validated_slots = []
+            for slot in batch['slots']:
+                serializer = CreateBookingSerializer(data={
+                    'resource_id': slot['resource_id'].pk,
+                    'sport_id': batch['sport_id'].pk,
+                    'start_datetime': slot['start_datetime'],
+                    'end_datetime': slot['end_datetime'],
+                    'participant_count': batch['participant_count'],
+                    'participant_names': batch.get('participant_names', ''),
+                    'contact_email': batch['contact_email'],
+                    'contact_phone': batch['contact_phone'],
+                })
+                serializer.is_valid(raise_exception=True)
+                validated_slots.append(serializer.validated_data)
+
+            validated_slots.sort(
+                key=lambda slot: (
+                    slot['resource'].pk,
+                    slot['start_datetime'],
+                )
+            )
+            with transaction.atomic():
+                bookings = [
+                    self.create_booking(slot, request.user)
+                    for slot in validated_slots
+                ]
+
+            serialized_bookings = BookingSerializer(bookings, many=True).data
+            return Response({
+                'results': serialized_bookings,
+                'total_price': str(sum(
+                    (booking.total_price for booking in bookings),
+                    start=bookings[0].total_price * 0,
+                )),
+            }, status=status.HTTP_201_CREATED)
+
+        serializer = CreateBookingSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        booking = self.create_booking(serializer.validated_data, request.user)
         return Response(
             BookingSerializer(booking).data,
             status=status.HTTP_201_CREATED,

@@ -8,6 +8,13 @@
     --bs-border-color: rgba(112, 128, 144, 0.2);
 }
 
+.quick-date-pill.active {
+    border-color: var(--brand-green);
+    background: var(--brand-green);
+    color: #fff;
+    box-shadow: 0 7px 16px rgba(30, 86, 49, 0.2);
+}
+
 body {
     background-color: #f5f7f4;
     color: #1f2a22;
@@ -562,7 +569,7 @@ form textarea:focus {
 
 .selected-slot-bar {
     position: fixed;
-    z-index: 1060;
+    z-index: 1040;
     right: 50%;
     bottom: 1.25rem;
     display: flex;
@@ -617,6 +624,53 @@ form textarea:focus {
 
 .booking-modal-content .form-control {
     border-radius: 10px;
+}
+
+.player-names-grid {
+    display: grid;
+    max-height: 220px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    overflow-y: auto;
+    padding: 0.1rem 0.3rem 0.1rem 0;
+}
+
+.player-name-field .form-label {
+    margin-bottom: 0.3rem;
+    color: #58675d;
+    font-size: 0.8rem;
+    font-weight: 650;
+}
+
+.player-name-field .form-control {
+    min-height: 42px;
+}
+
+.booking-confirmed-state[hidden] {
+    display: none;
+}
+
+.booking-confirmed-icon {
+    display: grid;
+    width: 58px;
+    height: 58px;
+    place-items: center;
+    margin: 0.4rem auto 1rem;
+    border-radius: 50%;
+    background: #e7f4e9;
+    color: #216239;
+    font-size: 1.8rem;
+    font-weight: 800;
+}
+
+.booking-more-button {
+    min-height: 48px;
+    border-radius: 999px;
+    font-weight: 700;
+}
+
+.modal-open .booking-sticky-bar {
+    display: none !important;
 }
 
 .booking-tabs {

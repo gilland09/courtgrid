@@ -1,0 +1,56 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+require('./availability_helpers.js');
+
+const {
+    calculateSlotTotal,
+    getSevenDayDates,
+    getSlotKey,
+    isValidEmail,
+    isValidPhone,
+    resizePlayerNames,
+} = globalThis.CourtGridAvailabilityHelpers;
+
+test('seven date pills stay anchored to the initial Manila date', () => {
+    assert.deepEqual(
+        getSevenDayDates('2026-11-18'),
+        [
+            '2026-11-18',
+            '2026-11-19',
+            '2026-11-20',
+            '2026-11-21',
+            '2026-11-22',
+            '2026-11-23',
+            '2026-11-24',
+        ],
+    );
+});
+
+test('slot identity includes both the resource and start time', () => {
+    assert.equal(getSlotKey(4, '2026-11-19T17:00:00+08:00'), '4-2026-11-19T17:00:00+08:00');
+    assert.notEqual(getSlotKey(4, 'slot-a'), getSlotKey(5, 'slot-a'));
+});
+
+test('selected slots total their per-slot hourly rates', () => {
+    assert.equal(
+        calculateSlotTotal([{ sportId: 2 }, { sportId: 2 }, { sportId: 3 }], {
+            2: '250.00',
+            3: '200.00',
+        }),
+        700,
+    );
+});
+
+test('player name values survive decreasing and increasing participant count', () => {
+    const reduced = resizePlayerNames(['Alex', 'Sam', 'Jo'], ['Alex', 'Sam'], 2);
+    const increased = resizePlayerNames(reduced, ['Alex', 'Sam'], 3);
+    assert.deepEqual(increased, ['Alex', 'Sam', 'Jo']);
+});
+
+test('contact validators accept valid email and phone values', () => {
+    assert.equal(isValidEmail(' player@example.com '), true);
+    assert.equal(isValidEmail('not-an-email'), false);
+    assert.equal(isValidPhone('+63 (917) 123-4567'), true);
+    assert.equal(isValidPhone('123'), false);
+});
