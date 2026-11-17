@@ -26,6 +26,10 @@ class Facility(models.Model):
         null=True,
         blank=True,
     )
+    gcash_number = models.CharField(max_length=20, blank=True, default='')
+    maya_number = models.CharField(max_length=20, blank=True, default='')
+    wallet_account_name = models.CharField(max_length=120, blank=True, default='')
+    payout_qr_label = models.CharField(max_length=120, blank=True, default='')
     address = models.TextField(blank=True)
     barangay = models.CharField(max_length=100, blank=True)
     latitude = models.DecimalField(

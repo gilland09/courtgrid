@@ -22,6 +22,7 @@ from .portal_forms import (
     FacilityClosureForm,
     FacilityForm,
     FacilityOperatingHoursForm,
+    FacilityPayoutWalletForm,
     FacilitySportForm,
 )
 
@@ -57,6 +58,7 @@ def owner_dashboard_context(user, facility_form=None):
         facility_panels.append({
             'facility': facility,
             'facility_form': FacilityForm(instance=facility),
+            'payout_wallet_form': FacilityPayoutWalletForm(instance=facility),
             'rates': [
                 {'sport': item, 'form': FacilitySportForm(instance=item)}
                 for item in facility.facility_sports.all()
@@ -154,6 +156,20 @@ def owner_dashboard_view(request):
                 messages.success(request, 'Sport rate and availability saved.')
             else:
                 portal_error(request, form, 'Please correct the sport rate.')
+        elif action == 'save_payout_wallet':
+            facility = get_object_or_404(
+                facilities,
+                pk=request.POST.get('facility_id'),
+            )
+            form = FacilityPayoutWalletForm(request.POST, instance=facility)
+            if form.is_valid():
+                form.save()
+                messages.success(
+                    request,
+                    'Payout destination settings saved. No transfers are enabled.',
+                )
+            else:
+                portal_error(request, form, 'Please correct the payout destination settings.')
         elif action == 'save_hours':
             facility = get_object_or_404(facilities, pk=request.POST.get('facility_id'))
             hours_id = request.POST.get('hours_id')

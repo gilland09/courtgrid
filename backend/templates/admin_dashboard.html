@@ -19,6 +19,7 @@
     <article class="finance-kpi"><span>Partner Venue Payouts (95%)</span><strong>₱{{ financial_totals.owner_payout|floatformat:2 }}</strong></article>
     <article class="finance-kpi"><span>Active Verified Venues &amp; Courts</span><strong>{{ active_verified_venues }} venues · {{ active_courts }} courts</strong></article>
 </section>
+<p class="sandbox-demo-notice mb-4">Sandbox estimates only — no customer payments have been collected and no partner payouts have been transferred by this demo.</p>
 
 <section class="card hover-lift mb-4" aria-labelledby="today-bookings-heading">
     <div class="card-body">
@@ -62,8 +63,8 @@
                 <thead>
                     <tr>
                         <th>Facility / Court</th><th>Sport</th><th>Date / Time</th><th>Booked By</th>
-                        <th>Contact</th><th>Participants</th><th>Player Roster</th><th>Gross Fee</th>
-                        <th>5% Admin Commission</th><th>95% Owner Payout</th><th>Payment Reference</th>
+                        <th>Contact</th><th>Participants</th><th>Player Roster</th><th>Gross Fee (estimate)</th>
+                        <th>5% Admin Commission (estimate)</th><th>95% Owner Payout (estimate)</th><th>Payment / Demo Reference</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -79,7 +80,7 @@
                             <td>₱{{ booking.total_price }}</td>
                             <td>₱{{ booking.platform_fee_amount }}</td>
                             <td>₱{{ booking.owner_payout_amount }}</td>
-                            <td><span class="payment-receipt-badge">{{ booking.get_payment_method_display }} · {{ booking.get_payment_status_display }}</span><br>{{ booking.payment_reference }}</td>
+                            <td><span class="payment-receipt-badge payment-pending-badge">{{ booking.get_payment_method_display }} · Pending (demo)</span><br>Reservation ref: {{ booking.payment_reference }}</td>
                         </tr>
                     {% empty %}
                         <tr><td colspan="11" class="text-body-secondary">No confirmed bookings.</td></tr>

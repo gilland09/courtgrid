@@ -731,6 +731,94 @@ form textarea:focus {
     font-weight: 700;
 }
 
+.payment-receipt-badge.payment-pending-badge,
+.payment-receipt-badge.sandbox-state-badge {
+    color: #624900;
+    background: #fff3cd;
+}
+
+.partner-wallet-card {
+    padding: 1.1rem;
+    border: 1px solid rgba(112, 128, 144, 0.18);
+    border-radius: 14px;
+    background: #f7f9f7;
+}
+
+.sandbox-checkout[hidden] {
+    display: none;
+}
+
+.sandbox-checkout {
+    overflow: hidden;
+    border: 1px solid rgba(112, 128, 144, 0.2);
+    border-radius: 16px;
+    background: #fff;
+}
+
+.sandbox-checkout-banner {
+    padding: 1.1rem 1.25rem;
+    color: #fff;
+    background: #27392d;
+}
+
+.sandbox-checkout-banner.sandbox-gcash {
+    background: #315a85;
+}
+
+.sandbox-checkout-banner.sandbox-maya {
+    background: #246340;
+}
+
+.sandbox-checkout-banner.sandbox-card {
+    background: #34445a;
+}
+
+.sandbox-checkout-body {
+    display: grid;
+    gap: 1rem;
+    padding: 1.1rem 1.25rem;
+}
+
+.sandbox-demo-notice {
+    margin: 0;
+    padding: 0.75rem;
+    border: 1px solid #e8c878;
+    border-radius: 10px;
+    color: #624900;
+    background: #fff8df;
+    font-size: 0.85rem;
+    font-weight: 650;
+}
+
+.sandbox-merchant-details {
+    display: grid;
+    gap: 0.7rem;
+}
+
+.sandbox-merchant-details > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.sandbox-merchant-details span {
+    color: #6d786f;
+}
+
+.sandbox-merchant-details strong {
+    text-align: right;
+}
+
+.sandbox-merchant-details .sandbox-amount {
+    padding-top: 0.7rem;
+    border-top: 1px solid rgba(112, 128, 144, 0.2);
+}
+
+.sandbox-amount strong {
+    color: #1e5631;
+    font-size: 1.15rem;
+}
+
 .booking-modal-content .form-control {
     border-radius: 10px;
 }

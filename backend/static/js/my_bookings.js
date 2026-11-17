@@ -161,13 +161,16 @@ function renderBookings() {
         );
         const paymentBadge = document.createElement('span');
         paymentBadge.className = 'payment-receipt-badge mb-2';
+        if (booking.payment_status === 'pending') {
+            paymentBadge.classList.add('payment-pending-badge');
+        }
         paymentBadge.textContent = booking.payment_status === 'pending'
-            ? 'Pay at Venue'
+            ? 'Payment pending · demo only'
             : booking.payment_status === 'refunded'
                 ? 'Refunded'
                 : 'Paid';
         body.append(paymentBadge);
-        addBookingDetail(body, 'Payment reference', booking.payment_reference || 'Pending');
+        addBookingDetail(body, 'Demo reservation reference', booking.payment_reference || 'Pending');
 
         if (
             booking.status === 'CONFIRMED'

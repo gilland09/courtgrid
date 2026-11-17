@@ -13,6 +13,15 @@ const bookingForm = document.getElementById('booking-confirm-form');
 const bookingFields = document.getElementById('booking-fields');
 const bookingConfirmedState = document.getElementById('booking-confirmed-state');
 const bookingConfirmedSummary = document.getElementById('booking-confirmed-summary');
+const paymentGateway = document.getElementById('payment-gateway');
+const gatewayBanner = document.getElementById('gateway-banner');
+const gatewayTitle = document.getElementById('gateway-title');
+const gatewayMerchant = document.getElementById('gateway-merchant');
+const gatewayMethod = document.getElementById('gateway-method');
+const gatewayAmount = document.getElementById('gateway-amount');
+const gatewayProcessingStatus = document.getElementById('gateway-processing-status');
+const gatewayAuthorizeButton = document.getElementById('gateway-authorize');
+const gatewayBackButton = document.getElementById('gateway-back');
 const rentalBreakdownLabel = document.getElementById('rental-breakdown-label');
 const rentalBreakdownAmount = document.getElementById('rental-breakdown-amount');
 const platformFeeBreakdown = document.getElementById('platform-fee-breakdown');
@@ -34,6 +43,12 @@ let slotButtons = new Map();
 let playerNames = [];
 let minimumSelectedCapacity = null;
 let availabilityRequest = 0;
+const paymentMethodLabels = {
+    gcash: 'GCash (demo)',
+    maya: 'Maya (demo)',
+    card: 'Credit / Debit Card (demo)',
+    cash: 'Pay at Venue',
+};
 
 function getManilaToday() {
     const parts = new Intl.DateTimeFormat('en-CA', {
@@ -148,6 +163,33 @@ function updatePaymentBreakdown() {
     rentalBreakdownAmount.textContent = formatCurrency(breakdown.gross);
     platformFeeBreakdown.textContent = formatCurrency(breakdown.platformFee);
     totalDueBreakdown.textContent = formatCurrency(breakdown.gross);
+    updateCheckoutButton();
+}
+
+function updateCheckoutButton() {
+    const method = selectedPaymentMethod();
+    confirmBookingButton.textContent = method === 'cash'
+        ? 'Confirm Reservation · Pay at Venue'
+        : `Proceed to Demo Checkout (${formatCurrency(selectedTotal())})`;
+}
+
+function openSandboxCheckout() {
+    const method = selectedPaymentMethod();
+    const names = {
+        gcash: 'GCash',
+        maya: 'Maya',
+        card: 'Card',
+    };
+    gatewayTitle.textContent = `${names[method]} Demo Checkout`;
+    gatewayBanner.className = `sandbox-checkout-banner sandbox-${method}`;
+    gatewayMerchant.textContent = `CourtGrid Demo · ${facilityDetail.dataset.facilityName}`;
+    gatewayMethod.textContent = paymentMethodLabels[method];
+    gatewayAmount.textContent = formatCurrency(selectedTotal());
+    gatewayProcessingStatus.textContent = 'Demo only. Continuing will create a reservation with payment pending.';
+    gatewayAuthorizeButton.disabled = false;
+    gatewayAuthorizeButton.textContent = 'Simulate Demo Checkout';
+    bookingFields.hidden = true;
+    paymentGateway.hidden = false;
 }
 
 function updateStickyBar() {
@@ -439,6 +481,7 @@ function openBookingModal() {
     updatePlayerNameInputs();
     bookingResult.replaceChildren();
     bookingFields.hidden = false;
+    paymentGateway.hidden = true;
     bookingConfirmedState.hidden = true;
     bookingModal.show();
 }
@@ -457,6 +500,8 @@ function bookingErrors(payload) {
 }
 
 function showBookingError(messages, type = 'danger') {
+    paymentGateway.hidden = true;
+    bookingFields.hidden = false;
     const alert = document.createElement('div');
     alert.className = `alert alert-${type}`;
     alert.setAttribute('role', type === 'danger' ? 'alert' : 'status');
@@ -480,54 +525,62 @@ function showConfirmedState(payload, bookedSlots, names) {
             `${formatDate(availabilityDate.value)} · ${formatSlotTime(booking.start_datetime)}–${formatSlotTime(booking.end_datetime)}`,
         );
     });
-    appendSummaryRow(
-        bookingConfirmedSummary,
-        bookings[0]?.payment_status === 'pending' ? 'Total due at venue' : 'Total paid',
-        formatCurrency(Number(payload.total_price ?? bookings.reduce(
-            (total, booking) => total + Number(booking.total_price || 0),
-            0,
-        ))),
-    );
+    const amount = Number(payload.total_price ?? bookings.reduce(
+        (total, booking) => total + Number(booking.total_price || 0),
+        0,
+    ));
+    appendSummaryRow(bookingConfirmedSummary, 'Reservation amount', formatCurrency(amount));
     const paymentMethod = bookings[0]?.payment_method || 'gcash';
-    const paymentLabels = {
-        gcash: 'GCash',
-        maya: 'Maya',
-        card: 'Credit / Debit Card',
-        cash: 'Pay at Venue',
-    };
-    const paymentStatus = bookings[0]?.payment_status || (
-        paymentMethod === 'cash' ? 'pending' : 'paid'
-    );
     const references = [...new Set(
         bookings.map((booking) => booking.payment_reference).filter(Boolean),
     )];
     appendSummaryRow(
         bookingConfirmedSummary,
-        'Payment',
-        `${paymentStatus === 'paid' ? 'PAID VIA' : 'PAY AT VENUE'} ${paymentLabels[paymentMethod] || paymentMethod}`,
+        'Payment selection',
+        paymentMethodLabels[paymentMethod] || paymentMethod,
     );
     appendSummaryRow(
         bookingConfirmedSummary,
-        'Payment reference',
+        'Payment status',
+        'Pending · no payment processed',
+    );
+    appendSummaryRow(
+        bookingConfirmedSummary,
+        'Demo reservation reference',
         references.join(', ') || 'Pending reference',
     );
+    appendSummaryRow(
+        bookingConfirmedSummary,
+        'Estimated partner share (95%)',
+        `${formatCurrency(amount * 0.95)} · ${facilityDetail.dataset.walletAccountName || 'venue partner'}`,
+    );
+    appendSummaryRow(
+        bookingConfirmedSummary,
+        'Estimated platform fee (5%)',
+        formatCurrency(amount * 0.05),
+    );
+    const sandboxNotice = document.createElement('p');
+    sandboxNotice.className = 'sandbox-demo-notice mb-0';
+    sandboxNotice.textContent = 'Sandbox reservation only. No funds were collected or transferred.';
+    bookingConfirmedSummary.append(sandboxNotice);
     appendSummaryRow(
         bookingConfirmedSummary,
         'Players',
         names.length ? names.join(', ') : 'Names not provided',
     );
     bookingFields.hidden = true;
+    paymentGateway.hidden = true;
     bookingResult.replaceChildren();
     bookingConfirmedState.hidden = false;
 }
 
-async function submitBooking(event) {
-    event.preventDefault();
+async function submitBooking(event, demoCheckout = false) {
+    event?.preventDefault();
     if (selectedSlots.length === 0) {
         showBookingError(['Select at least one available court slot first.']);
         return;
     }
-    if (!validateBookingForm()) {
+    if (!demoCheckout && !validateBookingForm()) {
         return;
     }
 
@@ -546,6 +599,10 @@ async function submitBooking(event) {
         return;
     }
     participantCount.setCustomValidity('');
+    if (!demoCheckout && selectedPaymentMethod() !== 'cash') {
+        openSandboxCheckout();
+        return;
+    }
     const csrfToken = getCsrfToken();
     if (!csrfToken) {
         showBookingError(['Unable to verify your session. Reload the page and try again.']);
@@ -555,7 +612,7 @@ async function submitBooking(event) {
     const bookedSlots = selectedSlots.map((slot) => ({ ...slot }));
     const names = playerNames.map((name) => name.trim()).filter(Boolean);
     confirmBookingButton.disabled = true;
-    confirmBookingButton.textContent = 'Confirming…';
+    confirmBookingButton.textContent = 'Creating reservation…';
     try {
         const response = await fetch('/api/bookings/', {
             method: 'POST',
@@ -599,7 +656,7 @@ async function submitBooking(event) {
         showBookingError(['The booking request could not be sent. Please try again.']);
     } finally {
         confirmBookingButton.disabled = false;
-        confirmBookingButton.textContent = 'Confirm Booking';
+        updateCheckoutButton();
     }
 }
 
@@ -661,6 +718,20 @@ bookingForm.addEventListener('submit', submitBooking);
 paymentMethodOptions.forEach((option) => {
     option.addEventListener('change', updatePaymentBreakdown);
 });
+gatewayAuthorizeButton.addEventListener('click', async () => {
+    gatewayAuthorizeButton.disabled = true;
+    gatewayBackButton.disabled = true;
+    gatewayAuthorizeButton.textContent = 'Creating reservation…';
+    gatewayProcessingStatus.textContent = 'Demo action complete. Saving the reservation; payment remains pending.';
+    await new Promise((resolve) => window.setTimeout(resolve, 600));
+    bookingFields.hidden = true;
+    await submitBooking(null, true);
+    gatewayBackButton.disabled = false;
+});
+gatewayBackButton.addEventListener('click', () => {
+    paymentGateway.hidden = true;
+    bookingFields.hidden = false;
+});
 
 bookingModalElement.addEventListener('show.bs.modal', () => {
     selectedSlotBar.hidden = true;
@@ -671,9 +742,11 @@ bookingModalElement.addEventListener('hidden.bs.modal', updateStickyBar);
 document.getElementById('book-more-slots').addEventListener('click', () => {
     bookingConfirmedState.hidden = true;
     bookingFields.hidden = false;
+    paymentGateway.hidden = true;
     playerNames = [];
     bookingForm.reset();
     playerNamesGrid.replaceChildren();
+    updateCheckoutButton();
     bookingModal.hide();
 });
 

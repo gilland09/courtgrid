@@ -61,6 +61,7 @@ class SeedCourtGridCommandTests(TestCase):
         seeded_bookings = Booking.objects.filter(user__username='demo_player')
         self.assertEqual(seeded_bookings.count(), 2)
         self.assertTrue(all(booking.payment_reference for booking in seeded_bookings))
+        self.assertTrue(all(booking.payment_status == 'pending' for booking in seeded_bookings))
         self.assertEqual(
             sum(
                 seeded_bookings.values_list('platform_fee_amount', flat=True),
@@ -81,6 +82,16 @@ class SeedCourtGridCommandTests(TestCase):
             self.assertEqual(facility.address, facility_data['address'])
             self.assertEqual(facility.barangay, facility_data['barangay'])
             self.assertEqual(facility.capacity, facility_data['capacity'])
+            self.assertEqual(
+                facility.wallet_account_name,
+                facility_data['wallet_account_name'],
+            )
+            self.assertEqual(facility.gcash_number, facility_data['gcash_number'])
+            self.assertEqual(facility.maya_number, facility_data['maya_number'])
+            self.assertEqual(
+                facility.payout_qr_label,
+                facility_data['payout_qr_label'],
+            )
             self.assertEqual(facility.latitude, Decimal(facility_data['latitude']))
             self.assertEqual(facility.longitude, Decimal(facility_data['longitude']))
             resources = facility.resources.filter(is_active=True)

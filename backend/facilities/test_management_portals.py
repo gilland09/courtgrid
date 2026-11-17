@@ -140,6 +140,50 @@ class InAppManagementPortalTests(TestCase):
                 end_time='19:00',
             ).exists()
         )
+
+    def test_owner_can_update_only_their_payout_destination_settings(self):
+        self.client.force_login(self.owner)
+
+        response = self.client.post(
+            reverse('owner_dashboard'),
+            {
+                'action': 'save_payout_wallet',
+                'facility_id': self.facility.pk,
+                'wallet_account_name': 'Owner Demo Account',
+                'gcash_number': '0917-000-0001',
+                'maya_number': '0918-000-0001',
+                'payout_qr_label': 'Demo QR label',
+            },
+        )
+
+        self.assertRedirects(response, reverse('owner_dashboard'))
+        self.facility.refresh_from_db()
+        self.assertEqual(self.facility.wallet_account_name, 'Owner Demo Account')
+        self.assertEqual(self.facility.gcash_number, '0917-000-0001')
+        self.assertEqual(self.facility.maya_number, '0918-000-0001')
+        self.assertEqual(self.facility.payout_qr_label, 'Demo QR label')
+
+    def test_owner_cannot_update_another_owners_payout_destination(self):
+        self.client.force_login(self.owner)
+
+        response = self.client.post(
+            reverse('owner_dashboard'),
+            {
+                'action': 'save_payout_wallet',
+                'facility_id': self.other_facility.pk,
+                'wallet_account_name': 'Unauthorized Account',
+                'gcash_number': '0917-000-0002',
+                'maya_number': '0918-000-0002',
+                'payout_qr_label': 'Unauthorized QR',
+            },
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.other_facility.refresh_from_db()
+        self.assertEqual(self.other_facility.wallet_account_name, '')
+        self.assertEqual(self.other_facility.gcash_number, '')
+        self.assertEqual(self.other_facility.maya_number, '')
+
     def test_owner_cannot_edit_another_owners_facility(self):
         self.client.force_login(self.owner)
 

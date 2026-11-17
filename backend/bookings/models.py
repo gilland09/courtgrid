@@ -120,7 +120,7 @@ class Booking(models.Model):
     payment_status = models.CharField(
         max_length=20,
         choices=PaymentStatus.choices,
-        default=PaymentStatus.PAID,
+        default=PaymentStatus.PENDING,
     )
     payment_reference = models.CharField(
         max_length=40,
@@ -178,12 +178,6 @@ class Booking(models.Model):
                 ).exclude(pk=self.pk).exists():
                     self.payment_reference = reference
                     break
-        self.payment_status = (
-            self.PaymentStatus.PENDING
-            if self.payment_method == self.PaymentMethod.CASH
-            else self.PaymentStatus.PAID
-        )
-
         update_fields = kwargs.get('update_fields')
         if update_fields is not None:
             kwargs['update_fields'] = set(update_fields) | {

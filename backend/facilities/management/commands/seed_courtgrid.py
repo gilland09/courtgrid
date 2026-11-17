@@ -36,6 +36,10 @@ FACILITIES = (
         'courts': 2,
         'owner_username': 'owner_municipal',
         'owner_name': 'Naval LGU Sports',
+        'wallet_account_name': 'Naval Municipal Gymnasium Partner',
+        'gcash_number': '0917-000-0000',
+        'maya_number': '0918-000-0000',
+        'payout_qr_label': 'Naval Municipal Demo Wallet',
     },
     {
         'name': 'BiPSU Sports Complex',
@@ -48,6 +52,10 @@ FACILITIES = (
         'courts': 3,
         'owner_username': 'owner_bipsu',
         'owner_name': 'BiPSU Athletics Office',
+        'wallet_account_name': 'BiPSU Sports Complex Treasury',
+        'gcash_number': '0917-000-0001',
+        'maya_number': '0918-000-0001',
+        'payout_qr_label': 'BiPSU Demo Wallet',
     },
     {
         'name': 'Caneja Turf & Pickleball Center',
@@ -60,6 +68,10 @@ FACILITIES = (
         'courts': 2,
         'owner_username': 'owner_caneja',
         'owner_name': 'Caneja Turf Management',
+        'wallet_account_name': 'Caneja Turf Partner',
+        'gcash_number': '0917-000-0002',
+        'maya_number': '0918-000-0002',
+        'payout_qr_label': 'Caneja Demo Wallet',
     },
     {
         'name': 'Santissimo Rosario Barangay Court',
@@ -72,6 +84,10 @@ FACILITIES = (
         'courts': 1,
         'owner_username': 'owner_santissimo',
         'owner_name': 'Brgy. Santissimo Council',
+        'wallet_account_name': 'Santissimo Barangay Court Partner',
+        'gcash_number': '0917-000-0003',
+        'maya_number': '0918-000-0003',
+        'payout_qr_label': 'Santissimo Demo Wallet',
     },
     {
         'name': "Tonio's Dink District",
@@ -84,6 +100,10 @@ FACILITIES = (
         'courts': 3,
         'owner_username': 'owner_tonio',
         'owner_name': 'Tonio Partner',
+        'wallet_account_name': "Tonio's Dink District Official",
+        'gcash_number': '0917-000-0004',
+        'maya_number': '0918-000-0004',
+        'payout_qr_label': 'Tonio Demo Wallet',
     },
 )
 
@@ -136,6 +156,10 @@ class Command(BaseCommand):
                 name=facility_data['name'],
                 defaults={
                     'owner': owner,
+                    'wallet_account_name': facility_data['wallet_account_name'],
+                    'gcash_number': facility_data['gcash_number'],
+                    'maya_number': facility_data['maya_number'],
+                    'payout_qr_label': facility_data['payout_qr_label'],
                     'address': facility_data['address'],
                     'barangay': facility_data['barangay'],
                     'latitude': facility_data['latitude'],

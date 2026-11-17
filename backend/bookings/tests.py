@@ -111,7 +111,7 @@ class BookingAPITests(TransactionTestCase):
         self.assertEqual(response.data['platform_fee_amount'], '12.50')
         self.assertEqual(response.data['owner_payout_amount'], '237.50')
         self.assertEqual(response.data['payment_method'], 'gcash')
-        self.assertEqual(response.data['payment_status'], 'paid')
+        self.assertEqual(response.data['payment_status'], 'pending')
         self.assertRegex(response.data['payment_reference'], r'^CG-\d{8}-[A-F0-9]{6}$')
         self.assertEqual(response.data['participant_names'], 'Alex, Sam')
         self.assertEqual(Booking.objects.get().participant_names, 'Alex, Sam')
@@ -190,7 +190,7 @@ class BookingAPITests(TransactionTestCase):
         self.assertEqual(response.status_code, 201, response.data)
         booking = response.data['results'][0]
         self.assertEqual(booking['payment_method'], 'maya')
-        self.assertEqual(booking['payment_status'], 'paid')
+        self.assertEqual(booking['payment_status'], 'pending')
         self.assertEqual(booking['payment_reference'], Booking.objects.get().payment_reference)
 
     def test_batch_booking_rolls_back_earlier_slots_when_a_later_slot_conflicts(self):

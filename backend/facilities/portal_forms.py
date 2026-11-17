@@ -62,6 +62,28 @@ class FacilitySportForm(forms.ModelForm):
         fields = ('hourly_rate', 'is_active')
 
 
+class FacilityPayoutWalletForm(forms.ModelForm):
+    class Meta:
+        model = Facility
+        fields = (
+            'wallet_account_name',
+            'gcash_number',
+            'maya_number',
+            'payout_qr_label',
+        )
+        widgets = {
+            'wallet_account_name': forms.TextInput(attrs={'autocomplete': 'organization'}),
+            'gcash_number': forms.TextInput(attrs={'autocomplete': 'off', 'inputmode': 'tel'}),
+            'maya_number': forms.TextInput(attrs={'autocomplete': 'off', 'inputmode': 'tel'}),
+            'payout_qr_label': forms.TextInput(),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs.setdefault('class', 'form-control')
+
+
 class FacilityOperatingHoursForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

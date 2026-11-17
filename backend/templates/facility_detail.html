@@ -4,7 +4,7 @@
 {% block title %}{{ facility.name }} | CourtGrid{% endblock %}
 
 {% block content %}
-<section id="facility-detail" class="facility-page mb-5" data-facility-id="{{ facility.pk }}" data-facility-name="{{ facility.name }}">
+<section id="facility-detail" class="facility-page mb-5" data-facility-id="{{ facility.pk }}" data-facility-name="{{ facility.name }}" data-wallet-account-name="{{ facility.wallet_account_name }}">
     <a href="{% url 'home' %}" class="link-secondary text-decoration-none">&larr; Back to facilities</a>
     <header class="facility-detail-header mt-3">
         <div>
@@ -135,7 +135,7 @@
                                     <span><strong>Pay at Venue</strong><small>Cash on arrival</small></span>
                                 </label>
                             </div>
-                            <p class="form-text mt-2 mb-0">Payment options are recorded at checkout; external payment processing is not connected.</p>
+                            <p class="form-text mt-2 mb-0">Demo only: no payment is processed. Never enter a wallet PIN, OTP, or card details.</p>
                         </fieldset>
                         <section class="payment-breakdown mt-3" aria-label="Price breakdown">
                             <div><span id="rental-breakdown-label">Court Rental (0 slots)</span><strong id="rental-breakdown-amount">₱0.00</strong></div>
@@ -147,10 +147,29 @@
                         {% endif %}
                         <div class="d-flex gap-2 mt-4">
                             <button type="button" class="btn btn-outline-secondary flex-fill" data-bs-dismiss="modal">Cancel</button>
-                            <button id="confirm-booking" type="submit" class="btn btn-primary flex-fill">Confirm Booking</button>
+                            <button id="confirm-booking" type="submit" class="btn btn-primary flex-fill">Proceed to Demo Checkout</button>
                         </div>
                     </div>
                 </form>
+                <section id="payment-gateway" class="sandbox-checkout" hidden aria-labelledby="gateway-title">
+                    <div class="sandbox-checkout-banner" id="gateway-banner">
+                        <p class="text-uppercase small fw-semibold mb-1">CourtGrid sandbox</p>
+                        <h3 id="gateway-title" class="h5 mb-0">Demo checkout</h3>
+                    </div>
+                    <div class="sandbox-checkout-body">
+                        <p class="sandbox-demo-notice" role="note">DEMO ONLY — no payment is processed and no provider is contacted. Do not enter wallet credentials, OTPs, or card information.</p>
+                        <div class="sandbox-merchant-details">
+                            <div><span>Merchant</span><strong id="gateway-merchant"></strong></div>
+                            <div><span>Selected method</span><strong id="gateway-method"></strong></div>
+                            <div class="sandbox-amount"><span>Reservation amount</span><strong id="gateway-amount">₱0.00</strong></div>
+                        </div>
+                        <p id="gateway-processing-status" class="small text-body-secondary" aria-live="polite">Use the demo action to continue to reservation confirmation.</p>
+                        <div class="d-flex flex-column flex-sm-row gap-2">
+                            <button id="gateway-authorize" type="button" class="btn btn-primary flex-fill">Simulate Demo Checkout</button>
+                            <button id="gateway-back" type="button" class="btn btn-outline-secondary">Back</button>
+                        </div>
+                    </div>
+                </section>
                 <section id="booking-confirmed-state" class="booking-confirmed-state" hidden aria-live="polite">
                     <div class="booking-confirmed-icon" aria-hidden="true">✓</div>
                     <h3 class="h4 text-center">Booking confirmed</h3>
