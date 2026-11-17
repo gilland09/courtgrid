@@ -31,8 +31,14 @@ class SeedCourtGridCommandTests(TestCase):
         self.assertEqual(FacilityOperatingHours.objects.count(), 35)
         self.assertEqual(SportSchedule.objects.count(), 63)
 
+        owner = get_user_model().objects.get(username='owner_tonio')
+        self.assertEqual(owner.courtgrid_profile.role, 'court_owner')
+        self.assertTrue(owner.check_password('owner123'))
+        self.assertEqual(owner.owned_facilities.count(), 5)
+
         for facility_data in FACILITIES:
             facility = Facility.objects.get(name=facility_data['name'])
+            self.assertEqual(facility.owner, owner)
             self.assertTrue(facility.is_active)
             self.assertFalse(facility.is_demo_data)
             self.assertTrue(facility.is_verified)

@@ -60,7 +60,8 @@ class UnifiedAuthenticationAndDashboardTests(TestCase):
         self.assertRedirects(response, reverse('home'))
         self.assertEqual(int(self.client.session['_auth_user_id']), user.pk)
         self.assertFalse(user.is_staff)
-        self.assertTrue(UserProfile.objects.filter(user=user, phone_number='').exists())
+        self.assertEqual(user.courtgrid_profile.role, UserProfile.Role.CUSTOMER)
+        self.assertEqual(user.courtgrid_profile.user_role, UserProfile.Role.CUSTOMER)
 
     def test_registration_saves_contact_details_and_requires_terms_for_new_form(self):
         response = self.client.post(
@@ -95,6 +96,21 @@ class UnifiedAuthenticationAndDashboardTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertFalse(get_user_model().objects.filter(username='no-terms-user').exists())
+
+    def test_registration_can_choose_court_owner_role(self):
+        response = self.client.post(
+            reverse('register'),
+            {
+                'username': 'new-court-owner',
+                'account_type': UserProfile.Role.COURT_OWNER,
+                'password1': 'Secure-demo-password-138!',
+                'password2': 'Secure-demo-password-138!',
+            },
+        )
+
+        self.assertRedirects(response, reverse('owner_dashboard'))
+        owner = get_user_model().objects.get(username='new-court-owner')
+        self.assertEqual(owner.courtgrid_profile.role, UserProfile.Role.COURT_OWNER)
 
     def test_invalid_registration_rerenders_form_without_creating_user(self):
         response = self.client.post(
@@ -264,5 +280,6 @@ class AdminDashboardActivityTests(TestCase):
         )
         self.assertContains(response, 'Dashboard Facility')
         self.assertContains(response, 'Maintenance')
-        self.assertContains(response, 'Go to Database Management')
-        self.assertContains(response, '/admin/')
+        self.assertContains(response, reverse('management_facilities'))
+        self.assertContains(response, reverse('management_closures'))
+        self.assertNotContains(response, 'href="/admin/"')

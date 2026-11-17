@@ -1,7 +1,7 @@
 {% load static %}
 <nav class="navbar navbar-expand-lg navbar-dark smart-navbar">
     <div class="container">
-        <a class="navbar-brand" href="{% if user.is_authenticated and user.is_staff %}{% url 'admin_dashboard' %}{% else %}{% url 'home' %}{% endif %}">
+        <a class="navbar-brand" href="{% if user.is_authenticated and user.is_staff or user.is_authenticated and user.is_superuser or user.is_authenticated and user.courtgrid_profile.user_role == 'admin' %}{% url 'admin_dashboard' %}{% elif user.is_authenticated and user.courtgrid_profile.user_role == 'court_owner' %}{% url 'owner_dashboard' %}{% else %}{% url 'home' %}{% endif %}">
             <img src="{% static 'images/logo-navbar.svg' %}" alt="CourtGrid Logo" width="36" height="36" class="me-2">
             <strong><em>CourtGrid</em></strong>
         </a>
@@ -11,12 +11,18 @@
         <div class="collapse navbar-collapse" id="mainNavigation">
             <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                 {% if user.is_authenticated %}
-                    {% if user.is_staff %}
+                    {% if user.is_staff or user.is_superuser or user.courtgrid_profile.user_role == 'admin' %}
                         <li class="nav-item"><a class="nav-link nav-pill" href="{% url 'admin_dashboard' %}">Admin Dashboard</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{% url 'admin:facilities_facility_changelist' %}">Manage Facilities</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{% url 'admin:facilities_facilityclosure_changelist' %}">Manage Closures</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{% url 'management_facilities' %}">Manage Facilities</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{% url 'management_closures' %}">Manage Closures</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{% url 'home' %}">Find Courts</a></li>
+                    {% elif user.courtgrid_profile.user_role == 'court_owner' %}
+                        <li class="nav-item"><a class="nav-link nav-pill" href="{% url 'owner_dashboard' %}">Owner Portal</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{% url 'owner_dashboard' %}#facilities">Manage My Courts &amp; Rates</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{% url 'management_closures' %}">Manage Closures</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{% url 'home' %}">Find Courts</a></li>
                     {% else %}
-                        <li class="nav-item"><a class="nav-link nav-pill" href="{% url 'home' %}">Book a Court</a></li>
+                        <li class="nav-item"><a class="nav-link nav-pill" href="{% url 'home' %}">Find Courts</a></li>
                         <li class="nav-item"><a class="nav-link nav-pill" href="{% url 'my_bookings' %}">My Bookings</a></li>
                     {% endif %}
                 {% endif %}

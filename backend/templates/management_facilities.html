@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+
+{% block title %}Manage Facilities | CourtGrid{% endblock %}
+
+{% block content %}
+<header class="mb-4">
+    <p class="text-uppercase text-body-secondary small mb-1">Platform administration</p>
+    <h1 class="h2">Manage Facilities</h1>
+    <p class="text-body-secondary">Review venue details, assigned owners, verification, availability, and rates.</p>
+    <a class="btn btn-outline-primary" href="{% url 'admin_dashboard' %}">Back to Admin Dashboard</a>
+</header>
+
+{% if messages %}
+    {% for message in messages %}
+        <div class="alert alert-{{ message.tags|default:'info' }}" role="status">{{ message }}</div>
+    {% endfor %}
+{% endif %}
+
+{% for panel in facility_panels %}
+    <section class="card mb-4">
+        <div class="card-body">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+                <div>
+                    <h2 class="h4 mb-1">{{ panel.facility.name }}</h2>
+                    <p class="text-body-secondary mb-0">{{ panel.facility.address }} · Owner: {{ panel.facility.owner|default:"Unassigned" }}</p>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="facility_id" value="{{ panel.facility.pk }}">
+                        <input type="hidden" name="action" value="toggle_verified">
+                        <button class="btn {% if panel.facility.is_verified %}btn-outline-secondary{% else %}btn-success{% endif %}" type="submit">
+                            {% if panel.facility.is_verified %}Unverify{% else %}Verify{% endif %} Location
+                        </button>
+                    </form>
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="facility_id" value="{{ panel.facility.pk }}">
+                        <input type="hidden" name="action" value="toggle_active">
+                        <button class="btn {% if panel.facility.is_active %}btn-outline-danger{% else %}btn-success{% endif %}" type="submit">
+                            {% if panel.facility.is_active %}Deactivate{% else %}Activate{% endif %}
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <details class="mt-3">
+                <summary class="fw-semibold">Edit facility</summary>
+                <form method="post" class="mt-3">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="save_facility">
+                    <input type="hidden" name="facility_id" value="{{ panel.facility.pk }}">
+                    {{ panel.form.as_p }}
+                    <button class="btn btn-primary" type="submit">Save Facility</button>
+                </form>
+            </details>
+
+            <h3 class="h5 mt-4">Sports and hourly rates</h3>
+            {% for rate in panel.rates %}
+                <form method="post" class="d-flex flex-wrap align-items-center gap-2 border rounded-3 p-3 mb-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="save_rate">
+                    <input type="hidden" name="facility_id" value="{{ panel.facility.pk }}">
+                    <input type="hidden" name="facility_sport_id" value="{{ rate.sport.pk }}">
+                    <strong class="me-auto">{{ rate.sport.sport.name }}</strong>
+                    <label class="form-check">
+                        <input class="form-check-input" name="is_active" type="checkbox" value="on" {% if rate.sport.is_active %}checked{% endif %}>
+                        Active
+                    </label>
+                    <div class="input-group" style="max-width: 180px">
+                        <span class="input-group-text">₱</span>
+                        <input class="form-control" name="hourly_rate" type="number" min="0" step="0.01" value="{{ rate.sport.hourly_rate|default_if_none:'' }}" aria-label="Hourly rate">
+                    </div>
+                    <button class="btn btn-outline-primary" type="submit">Save Rate</button>
+                </form>
+            {% empty %}
+                <p class="text-body-secondary">No sports configured.</p>
+            {% endfor %}
+        </div>
+    </section>
+{% empty %}
+    <div class="alert alert-info">No facilities are registered.</div>
+{% endfor %}
+{% endblock %}

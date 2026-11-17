@@ -1,0 +1,194 @@
+{% extends 'base.html' %}
+
+{% block title %}Owner Portal | CourtGrid{% endblock %}
+
+{% block content %}
+<header class="mb-4">
+    <p class="text-uppercase text-body-secondary small mb-1">Venue partner</p>
+    <h1 class="h2">Owner Portal</h1>
+    <p class="text-body-secondary mb-0">Manage facilities, courts, rates, schedules, closures, and reservations.</p>
+</header>
+
+{% if messages %}
+    {% for message in messages %}
+        <div class="alert alert-{{ message.tags|default:'info' }}" role="status">{{ message }}</div>
+    {% endfor %}
+{% endif %}
+
+<section class="card mb-4">
+    <div class="card-body">
+        <h2 class="h4">Add a facility</h2>
+        <form method="post" class="row g-3">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="save_facility">
+            {{ facility_form.as_p }}
+            <div class="col-12"><button class="btn btn-primary" type="submit">Create Facility</button></div>
+        </form>
+    </div>
+</section>
+
+{% for panel in facility_panels %}
+    <section id="{% if forloop.first %}facilities{% else %}facility-{{ panel.facility.pk }}{% endif %}" class="card mb-4" aria-labelledby="facility-heading-{{ panel.facility.pk }}">
+        <div class="card-body">
+            <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
+                <div>
+                    <p class="text-uppercase text-body-secondary small mb-1">Your facility</p>
+                    <h2 id="facility-heading-{{ panel.facility.pk }}" class="h4 mb-0">{{ panel.facility.name }}</h2>
+                </div>
+                <span class="badge {% if panel.facility.is_active %}text-bg-success{% else %}text-bg-secondary{% endif %}">
+                    {% if panel.facility.is_active %}Active{% else %}Inactive{% endif %}
+                </span>
+            </div>
+
+            <details class="mb-4">
+                <summary class="fw-semibold">Edit facility details</summary>
+                <form method="post" class="row g-3 mt-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="save_facility">
+                    <input type="hidden" name="facility_id" value="{{ panel.facility.pk }}">
+                    {{ panel.facility_form.as_p }}
+                    <div class="col-12"><button class="btn btn-primary" type="submit">Save Facility</button></div>
+                </form>
+            </details>
+
+            <div class="row g-4">
+                <div class="col-lg-6">
+                    <h3 class="h5">Courts / resources</h3>
+                    {% for resource in panel.facility.resources.all %}
+                        <form method="post" class="border rounded-3 p-3 mb-2">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="save_resource">
+                            <input type="hidden" name="facility_id" value="{{ panel.facility.pk }}">
+                            <input type="hidden" name="resource_id" value="{{ resource.pk }}">
+                            <div class="row g-2 align-items-end">
+                                <div class="col-sm-5"><label class="form-label">Court name</label><input class="form-control" name="name" value="{{ resource.name }}" required></div>
+                                <div class="col-sm-3"><label class="form-label">Capacity</label><input class="form-control" name="capacity" type="number" min="1" value="{{ resource.capacity|default_if_none:'' }}"></div>
+                                <div class="col-sm-2 form-check"><input class="form-check-input" name="is_active" type="checkbox" value="on" {% if resource.is_active %}checked{% endif %}><label class="form-check-label">Active</label></div>
+                                <div class="col-sm-2"><button class="btn btn-outline-primary btn-sm" type="submit">Save</button></div>
+                            </div>
+                        </form>
+                    {% empty %}
+                        <p class="text-body-secondary">No courts added yet.</p>
+                    {% endfor %}
+                    <form method="post" class="border rounded-3 p-3">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="save_resource">
+                        <input type="hidden" name="facility_id" value="{{ panel.facility.pk }}">
+                        <h4 class="h6">Add a court</h4>
+                        <div class="row g-2 align-items-end">
+                            <div class="col-sm-6"><label class="form-label">Court name</label><input class="form-control" name="name" placeholder="Court 1" required></div>
+                            <div class="col-sm-3"><label class="form-label">Capacity</label><input class="form-control" name="capacity" type="number" min="1"></div>
+                            <div class="col-sm-3"><button class="btn btn-primary btn-sm" type="submit">Add Court</button></div>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="col-lg-6">
+                    <h3 class="h5">Sports & hourly rates</h3>
+                    {% for rate in panel.rates %}
+                        <form method="post" class="border rounded-3 p-3 mb-2">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="save_rate">
+                            <input type="hidden" name="facility_sport_id" value="{{ rate.sport.pk }}">
+                            <div class="d-flex flex-wrap gap-2 align-items-center">
+                                <strong class="me-auto">{{ rate.sport.sport.name }}</strong>
+                                <label class="visually-hidden" for="rate-{{ rate.sport.pk }}">Rate per hour</label>
+                                <div class="input-group" style="max-width: 180px">
+                                    <span class="input-group-text">₱</span>
+                                    <input id="rate-{{ rate.sport.pk }}" class="form-control" name="hourly_rate" type="number" min="0" step="0.01" value="{{ rate.sport.hourly_rate|default_if_none:'' }}">
+                                </div>
+                                <label class="form-check"><input class="form-check-input" name="is_active" type="checkbox" value="on" {% if rate.sport.is_active %}checked{% endif %}> Active</label>
+                                <button class="btn btn-outline-primary btn-sm" type="submit">Save Rate</button>
+                            </div>
+                        </form>
+                    {% empty %}
+                        <p class="text-body-secondary">No sports are configured for this facility.</p>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <h3 class="h5">Operating hours</h3>
+                {% for hours in panel.hours %}
+                    <form method="post" class="d-flex flex-wrap align-items-end gap-2 border rounded-3 p-3 mb-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="save_hours">
+                        <input type="hidden" name="facility_id" value="{{ panel.facility.pk }}">
+                        <input type="hidden" name="hours_id" value="{{ hours.schedule.pk }}">
+                        {{ hours.form.as_p }}
+                        <button class="btn btn-outline-primary btn-sm" type="submit">Save Hours</button>
+                    </form>
+                {% empty %}
+                    <p class="text-body-secondary">No operating hours set.</p>
+                {% endfor %}
+                <form method="post" class="row g-2 align-items-end border rounded-3 p-3">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="save_hours">
+                    <input type="hidden" name="facility_id" value="{{ panel.facility.pk }}">
+                    <h4 class="h6">Add operating hours</h4>
+                    {{ hours_form.as_p }}
+                    <div class="col-12"><button class="btn btn-outline-primary" type="submit">Add Hours</button></div>
+                </form>
+            </div>
+        </div>
+    </section>
+{% empty %}
+    <div class="alert alert-info">No facilities are assigned to this account yet.</div>
+{% endfor %}
+
+<section class="card mb-4">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h2 class="h4 mb-0">Closures & maintenance</h2>
+            <a class="btn btn-outline-primary" href="{% url 'management_closures' %}">Manage Closures</a>
+        </div>
+        <p class="text-body-secondary mt-2">Schedule a closure for a single court or the entire facility.</p>
+        <form method="post" class="row g-3">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="create_closure">
+            {{ closure_form.as_p }}
+            <div class="col-12"><button class="btn btn-primary" type="submit">Schedule Closure</button></div>
+        </form>
+        {% for closure in closures %}
+            <div class="d-flex justify-content-between align-items-center border-top py-2">
+                <span><strong>{{ closure.facility.name }}</strong> · {{ closure.resource.name|default:"All courts" }} · {{ closure.start_datetime|date:"M j, Y H:i" }}–{{ closure.end_datetime|date:"M j, Y H:i" }} · {{ closure.reason }}</span>
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="delete_closure">
+                    <input type="hidden" name="closure_id" value="{{ closure.pk }}">
+                    <button class="btn btn-outline-danger btn-sm" type="submit">Remove</button>
+                </form>
+            </div>
+        {% empty %}
+            <p class="text-body-secondary mb-0">No closures scheduled.</p>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="card">
+    <div class="card-body">
+        <h2 class="h4">Venue bookings</h2>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle">
+                <thead><tr><th>Facility / Court</th><th>Sport</th><th>Date & time</th><th>Customer</th><th>Contact</th><th>Players</th><th>Roster</th><th>Rate</th></tr></thead>
+                <tbody>
+                    {% for booking in venue_bookings %}
+                        <tr>
+                            <td>{{ booking.resource.facility.name }} / {{ booking.resource.name }}</td>
+                            <td>{{ booking.sport.name }}</td>
+                            <td>{{ booking.start_datetime|date:"M j, Y H:i" }}–{{ booking.end_datetime|date:"H:i" }}</td>
+                            <td>{{ booking.user.get_username }}</td>
+                            <td>{{ booking.contact_email }}<br>{{ booking.contact_phone }}</td>
+                            <td>{{ booking.participant_count }}</td>
+                            <td>{{ booking.participant_names|default:"—" }}</td>
+                            <td>₱{{ booking.rate_snapshot }}/hr<br>₱{{ booking.total_price }} total</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="8" class="text-body-secondary">No confirmed venue bookings.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endblock %}

@@ -7,15 +7,42 @@ from facilities.models import BookableResource, Sport
 
 
 class UserProfile(models.Model):
+    class Role(models.TextChoices):
+        CUSTOMER = 'customer', 'Customer / Player'
+        COURT_OWNER = 'court_owner', 'Court Owner / Venue Partner'
+        ADMIN = 'admin', 'Platform Administrator'
+
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='courtgrid_profile',
     )
     phone_number = models.CharField(max_length=32, blank=True)
+    role = models.CharField(
+        max_length=20,
+        choices=Role.choices,
+        default=Role.CUSTOMER,
+    )
+
+    @property
+    def user_role(self):
+        if self.user.is_staff or self.user.is_superuser:
+            return self.Role.ADMIN
+        return self.role
 
     def __str__(self):
         return f'{self.user} profile'
+
+
+def get_user_role(user):
+    if not user.is_authenticated:
+        return UserProfile.Role.CUSTOMER
+    if user.is_staff or user.is_superuser:
+        return UserProfile.Role.ADMIN
+    try:
+        return user.courtgrid_profile.user_role
+    except UserProfile.DoesNotExist:
+        return UserProfile.Role.CUSTOMER
 
 
 class Booking(models.Model):

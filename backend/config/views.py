@@ -1,5 +1,5 @@
 from django.contrib import messages
-from django.contrib.admin.views.decorators import staff_member_required
+from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth import login as auth_login
 from django.contrib.auth import logout as auth_logout
 from django.contrib.auth.decorators import login_required
@@ -9,13 +9,18 @@ from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from bookings.models import Booking
+from bookings.models import Booking, UserProfile, get_user_role
 from facilities.models import FacilityClosure, Sport
 from .forms import RegistrationForm
 
 
 def _dashboard_url(user):
-    return 'admin_dashboard' if user.is_staff else 'home'
+    role = get_user_role(user)
+    if role == UserProfile.Role.ADMIN:
+        return 'admin_dashboard'
+    if role == UserProfile.Role.COURT_OWNER:
+        return 'owner_dashboard'
+    return 'home'
 
 
 def login_view(request):
@@ -40,7 +45,7 @@ def register_view(request):
         with transaction.atomic():
             user = form.save()
         auth_login(request, user)
-        return redirect('home')
+        return redirect(_dashboard_url(user))
 
     return render(request, 'register.html', {'form': form})
 
@@ -57,7 +62,10 @@ def home_view(request):
     return render(request, 'home.html', {'sports': sports})
 
 
-@staff_member_required(login_url='login')
+@user_passes_test(
+    lambda user: get_user_role(user) == UserProfile.Role.ADMIN,
+    login_url='login',
+)
 def admin_dashboard_view(request):
     now = timezone.now()
     today = timezone.localtime(now).date()
@@ -77,9 +85,15 @@ def admin_dashboard_view(request):
         .select_related('facility', 'resource')
         .order_by('start_datetime')
     )
+    all_bookings = (
+        Booking.objects.filter(status=Booking.Status.CONFIRMED)
+        .select_related('user', 'resource__facility', 'sport')
+        .order_by('start_datetime')
+    )
     return render(request, 'admin_dashboard.html', {
         'todays_bookings': todays_bookings,
         'active_closures': active_closures,
+        'all_bookings': all_bookings,
     })
 
 

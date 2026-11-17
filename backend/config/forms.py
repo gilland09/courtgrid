@@ -9,6 +9,14 @@ class RegistrationForm(UserCreationForm):
     full_name = forms.CharField(max_length=150, required=False)
     email = forms.EmailField(required=False)
     phone_number = forms.CharField(max_length=32, required=False)
+    account_type = forms.ChoiceField(
+        choices=(
+            (UserProfile.Role.CUSTOMER, 'Player / Customer'),
+            (UserProfile.Role.COURT_OWNER, 'Court Owner / Partner'),
+        ),
+        required=False,
+        initial=UserProfile.Role.CUSTOMER,
+    )
     accept_terms = forms.BooleanField(required=False)
 
     class Meta(UserCreationForm.Meta):
@@ -36,6 +44,10 @@ class RegistrationForm(UserCreationForm):
             user.save()
             UserProfile.objects.update_or_create(
                 user=user,
-                defaults={'phone_number': self.cleaned_data.get('phone_number', '').strip()},
+                defaults={
+                    'phone_number': self.cleaned_data.get('phone_number', '').strip(),
+                    'role': self.cleaned_data.get('account_type')
+                    or UserProfile.Role.CUSTOMER,
+                },
             )
         return user

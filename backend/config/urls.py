@@ -17,6 +17,11 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 
+from facilities.management_views import (
+    management_closures_view,
+    management_facilities_view,
+    owner_dashboard_view,
+)
 from facilities.views import facility_detail_view
 
 from .views import (
@@ -40,6 +45,9 @@ urlpatterns = [
         name='facility-detail-page',
     ),
     path('admin-dashboard/', admin_dashboard_view, name='admin_dashboard'),
+    path('owner/dashboard/', owner_dashboard_view, name='owner_dashboard'),
+    path('management/facilities/', management_facilities_view, name='management_facilities'),
+    path('management/closures/', management_closures_view, name='management_closures'),
     path('logout/', logout_view, name='logout'),
     path('api/', include('facilities.urls')),
     path('api/', include('bookings.urls')),

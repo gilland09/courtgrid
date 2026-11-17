@@ -19,6 +19,13 @@ class Sport(models.Model):
 
 class Facility(models.Model):
     name = models.CharField(max_length=200)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name='owned_facilities',
+        null=True,
+        blank=True,
+    )
     address = models.TextField(blank=True)
     barangay = models.CharField(max_length=100, blank=True)
     latitude = models.DecimalField(

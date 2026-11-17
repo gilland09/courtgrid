@@ -7,7 +7,10 @@
     <p class="text-uppercase text-body-secondary small mb-1">Administration</p>
     <h1 class="h2">Master Control Dashboard</h1>
     <p class="text-body-secondary">Review today's bookings and currently active facility closures.</p>
-    <a href="/admin/" class="btn btn-primary hover-lift">Go to Database Management</a>
+    <div class="d-flex flex-wrap gap-2">
+        <a href="{% url 'management_facilities' %}" class="btn btn-primary hover-lift">Manage Facilities</a>
+        <a href="{% url 'management_closures' %}" class="btn btn-outline-primary hover-lift">Manage Closures</a>
+    </div>
 </header>
 
 <section class="card hover-lift mb-4" aria-labelledby="today-bookings-heading">
@@ -37,6 +40,38 @@
                         </tr>
                     {% empty %}
                         <tr><td colspan="6" class="text-body-secondary">No confirmed bookings today.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<section class="card hover-lift mb-4" aria-labelledby="master-bookings-heading">
+    <div class="card-body">
+        <h2 id="master-bookings-heading" class="h4">All Confirmed Bookings</h2>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Facility / Court</th><th>Sport</th><th>Date / Time</th><th>Booked By</th>
+                        <th>Contact</th><th>Participants</th><th>Player Roster</th><th>Rate</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for booking in all_bookings %}
+                        <tr>
+                            <td>{{ booking.resource.facility.name }} / {{ booking.resource.name }}</td>
+                            <td>{{ booking.sport.name }}</td>
+                            <td>{{ booking.start_datetime|date:"M j, Y H:i" }}–{{ booking.end_datetime|date:"H:i" }}</td>
+                            <td>{{ booking.user.get_username }}</td>
+                            <td>{{ booking.contact_email }}<br>{{ booking.contact_phone }}</td>
+                            <td>{{ booking.participant_count }}</td>
+                            <td>{{ booking.participant_names|default:"—" }}</td>
+                            <td>₱{{ booking.rate_snapshot }}/hr<br>₱{{ booking.total_price }} total</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="8" class="text-body-secondary">No confirmed bookings.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

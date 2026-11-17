@@ -1,8 +1,10 @@
 from datetime import time
 
+from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
+from bookings.models import UserProfile
 from facilities.models import (
     BookableResource,
     Facility,
@@ -87,6 +89,25 @@ class Command(BaseCommand):
 
     @transaction.atomic
     def handle(self, *args, **options):
+        user_model = get_user_model()
+        owner, _ = user_model.objects.get_or_create(
+            username='owner_tonio',
+            defaults={
+                'email': 'owner_tonio@courtgrid.local',
+                'first_name': 'Tonio',
+                'last_name': 'Owner',
+            },
+        )
+        owner.set_password('owner123')
+        owner.save(update_fields=('password',))
+        UserProfile.objects.update_or_create(
+            user=owner,
+            defaults={
+                'role': UserProfile.Role.COURT_OWNER,
+                'phone_number': '',
+            },
+        )
+
         sports = {}
         for name, slug in SPORTS:
             sports[name], _ = Sport.objects.update_or_create(
@@ -98,6 +119,7 @@ class Command(BaseCommand):
             facility, _ = Facility.objects.update_or_create(
                 name=facility_data['name'],
                 defaults={
+                    'owner': owner,
                     'address': facility_data['address'],
                     'barangay': facility_data['barangay'],
                     'latitude': facility_data['latitude'],

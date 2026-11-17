@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+
+{% block title %}Manage Closures | CourtGrid{% endblock %}
+
+{% block content %}
+<header class="mb-4">
+    <p class="text-uppercase text-body-secondary small mb-1">In-app management</p>
+    <h1 class="h2">Manage Closures</h1>
+    <p class="text-body-secondary">Schedule or remove a maintenance closure for a court or entire facility.</p>
+</header>
+
+{% if messages %}
+    {% for message in messages %}
+        <div class="alert alert-{{ message.tags|default:'info' }}" role="status">{{ message }}</div>
+    {% endfor %}
+{% endif %}
+
+<section class="card mb-4">
+    <div class="card-body">
+        <h2 class="h4">Schedule a closure</h2>
+        <form method="post" class="row g-3">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="create_closure">
+            {{ closure_form.as_p }}
+            <div class="col-12"><button class="btn btn-primary" type="submit">Schedule Closure</button></div>
+        </form>
+    </div>
+</section>
+
+<section class="card">
+    <div class="card-body">
+        <h2 class="h4">Scheduled closures</h2>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle">
+                <thead><tr><th>Facility</th><th>Court</th><th>Start</th><th>End</th><th>Reason</th><th></th></tr></thead>
+                <tbody>
+                    {% for closure in closures %}
+                        <tr>
+                            <td>{{ closure.facility.name }}</td>
+                            <td>{{ closure.resource.name|default:"All courts" }}</td>
+                            <td>{{ closure.start_datetime|date:"M j, Y H:i" }}</td>
+                            <td>{{ closure.end_datetime|date:"M j, Y H:i" }}</td>
+                            <td>{{ closure.reason }}</td>
+                            <td>
+                                <form method="post">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="delete_closure">
+                                    <input type="hidden" name="closure_id" value="{{ closure.pk }}">
+                                    <button class="btn btn-outline-danger btn-sm" type="submit">Remove</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="6" class="text-body-secondary">No closures scheduled.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endblock %}
