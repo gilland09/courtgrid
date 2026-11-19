@@ -252,6 +252,7 @@ class AdminDashboardActivityTests(TestCase):
             end_datetime=booking_start + timedelta(hours=1),
             participant_count=2,
             status=Booking.Status.CONFIRMED,
+            payment_status=Booking.PaymentStatus.PAID,
             rate_snapshot=Decimal('200.00'),
             total_price=Decimal('200.00'),
         )

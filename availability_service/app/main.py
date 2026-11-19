@@ -3,7 +3,7 @@ import os
 import uvicorn
 from fastapi import FastAPI
 
-from .evaluator import run_parallel_evaluation
+from .evaluator import run_parallel_evaluation_with_schedule
 from .schemas import AvailabilityRequest, AvailabilityResponse
 
 app = FastAPI(
@@ -14,9 +14,10 @@ app = FastAPI(
 
 @app.post('/availability/search', response_model=AvailabilityResponse)
 def search_availability(request: AvailabilityRequest) -> AvailabilityResponse:
-    available_slots, elapsed_time = run_parallel_evaluation(request)
+    available_slots, slots, elapsed_time = run_parallel_evaluation_with_schedule(request)
     return AvailabilityResponse(
         available_slots=available_slots,
+        slots=slots,
         parallel_elapsed_time=elapsed_time,
     )
 

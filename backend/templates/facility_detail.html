@@ -4,7 +4,7 @@
 {% block title %}{{ facility.name }} | CourtGrid{% endblock %}
 
 {% block content %}
-<section id="facility-detail" class="facility-page mb-5" data-facility-id="{{ facility.pk }}" data-facility-name="{{ facility.name }}" data-wallet-account-name="{{ facility.wallet_account_name }}">
+<section id="facility-detail" class="facility-page mb-5" data-facility-id="{{ facility.pk }}" data-facility-name="{{ facility.name }}" data-wallet-account-name="{{ facility.wallet_account_name }}" data-merchant-gcash="{{ facility.gcash_number }}" data-merchant-maya="{{ facility.maya_number }}" data-merchant-qr="{% if facility.payment_qr_image %}{{ facility.payment_qr_image.url }}{% endif %}">
     <a href="{% url 'home' %}" class="link-secondary text-decoration-none">&larr; Back to facilities</a>
     <header class="facility-detail-header mt-3">
         <div>
@@ -47,7 +47,7 @@
             {% for hours in operating_hours %}
                 <div class="operating-hour-row">
                     <span>{{ hours.get_day_of_week_display }}</span>
-                    <strong>{{ hours.start_time|time:"H:i" }}&ndash;{{ hours.end_time|time:"H:i" }}</strong>
+                    <strong>{{ hours.start_time|time:"g:i A" }}&ndash;{{ hours.end_time|time:"g:i A" }}</strong>
                 </div>
             {% empty %}
                 <p class="text-body-secondary mb-0">Operating hours have not been listed.</p>
@@ -65,6 +65,7 @@
                 <span><i class="legend-dot available"></i> Available</span>
                 <span><i class="legend-dot selected"></i> Selected</span>
                 <span><i class="legend-dot unavailable"></i> Booked / Closed</span>
+                <span><i class="legend-dot passed"></i> Passed</span>
             </div>
         </div>
         <form id="booking-csrf-form" class="d-none">{% csrf_token %}</form>
@@ -135,7 +136,7 @@
                                     <span><strong>Pay at Venue</strong><small>Cash on arrival</small></span>
                                 </label>
                             </div>
-                            <p class="form-text mt-2 mb-0">Demo only: no payment is processed. Never enter a wallet PIN, OTP, or card details.</p>
+                            <p class="form-text mt-2 mb-0">GCash/Maya transfers are made directly to the venue outside CourtGrid and must be verified by the venue. Card checkout is unavailable; CourtGrid never collects wallet PINs, OTPs, or card details.</p>
                         </fieldset>
                         <section class="payment-breakdown mt-3" aria-label="Price breakdown">
                             <div><span id="rental-breakdown-label">Court Rental (0 slots)</span><strong id="rental-breakdown-amount">₱0.00</strong></div>
@@ -157,12 +158,18 @@
                         <h3 id="gateway-title" class="h5 mb-0">Demo checkout</h3>
                     </div>
                     <div class="sandbox-checkout-body">
-                        <p class="sandbox-demo-notice" role="note">DEMO ONLY — no payment is processed and no provider is contacted. Do not enter wallet credentials, OTPs, or card information.</p>
+                        <p class="sandbox-demo-notice" role="note">Wallet transfers are external and remain pending until venue verification. CourtGrid does not contact payment providers; never enter a wallet PIN, OTP, or card information here.</p>
                         <div class="sandbox-merchant-details">
                             <div><span>Merchant</span><strong id="gateway-merchant"></strong></div>
                             <div><span>Selected method</span><strong id="gateway-method"></strong></div>
                             <div class="sandbox-amount"><span>Reservation amount</span><strong id="gateway-amount">₱0.00</strong></div>
                         </div>
+                        <section id="owner-merchant-payment" class="owner-merchant-payment" hidden aria-label="Owner merchant payment details">
+                            <h4 class="h6">Pay directly to this venue's merchant account</h4>
+                            <p id="owner-merchant-instructions" class="small text-body-secondary"></p>
+                            <img id="owner-merchant-qr" class="owner-merchant-qr" alt="Venue merchant QR code" hidden>
+                            <p id="owner-merchant-no-qr" class="small text-body-secondary mb-0">No merchant QR image has been uploaded. Ask the venue for verified payment instructions.</p>
+                        </section>
                         <p id="gateway-processing-status" class="small text-body-secondary" aria-live="polite">Use the demo action to continue to reservation confirmation.</p>
                         <div class="d-flex flex-column flex-sm-row gap-2">
                             <button id="gateway-authorize" type="button" class="btn btn-primary flex-fill">Simulate Demo Checkout</button>
@@ -172,8 +179,9 @@
                 </section>
                 <section id="booking-confirmed-state" class="booking-confirmed-state" hidden aria-live="polite">
                     <div class="booking-confirmed-icon" aria-hidden="true">✓</div>
-                    <h3 class="h4 text-center">Booking confirmed</h3>
-                    <div id="booking-confirmed-summary" class="booking-summary mb-4"></div>
+                    <h3 class="h4 text-center">Reservation submitted</h3>
+                    <div id="booking-confirmed-summary" class="booking-summary mb-4 receipt-print-area"></div>
+                    <button id="print-booking-receipt" type="button" class="btn btn-outline-secondary w-100 mb-3">Print / Save Reservation Receipt</button>
                     <div class="d-grid gap-2">
                         <a class="btn btn-primary auth-submit" href="/my-bookings/">View My Bookings</a>
                         <button id="book-more-slots" type="button" class="btn btn-outline-secondary booking-more-button">Book More Slots</button>

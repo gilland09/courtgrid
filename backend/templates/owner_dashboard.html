@@ -16,11 +16,11 @@
 {% endif %}
 
 <section class="finance-kpis" aria-label="Owner financial summary">
-    <article class="finance-kpi"><span>Gross Court Bookings</span><strong>₱{{ financial_totals.gross|floatformat:2 }}</strong></article>
-    <article class="finance-kpi"><span>CourtGrid Partner Commission (5%)</span><strong>₱{{ financial_totals.platform_fee|floatformat:2 }}</strong></article>
-    <article class="finance-kpi is-revenue"><span>Net Owner Payout (95%)</span><strong>₱{{ financial_totals.owner_payout|floatformat:2 }}</strong></article>
+    <article class="finance-kpi"><span>Direct Customer Collections (100%)</span><strong>₱{{ financial_totals.gross|floatformat:2 }}</strong></article>
+    <article class="finance-kpi"><span>CourtGrid 5% Commission Payable to Admin</span><strong>₱{{ financial_totals.platform_fee|floatformat:2 }}</strong></article>
+    <article class="finance-kpi is-revenue"><span>Net Owner Retained Earnings (95%)</span><strong>₱{{ financial_totals.owner_payout|floatformat:2 }}</strong></article>
 </section>
-<p class="sandbox-demo-notice mb-4">Sandbox estimates only — these booking totals do not represent collected payments or completed partner transfers.</p>
+<p class="sandbox-demo-notice mb-4">Only venue-verified customer payments count as collections. CourtGrid does not process customer transfers; platform commissions are manually collected from owners.</p>
 
 <section class="card mb-4">
     <div class="card-body">
@@ -62,13 +62,16 @@
                 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
                     <div>
                         <p class="text-uppercase small fw-semibold mb-1">Partner settings</p>
-                        <h3 id="wallet-{{ panel.facility.pk }}" class="h5">Payout Destination (Demo Configuration)</h3>
+                        <h3 id="wallet-{{ panel.facility.pk }}" class="h5">Merchant Payment &amp; QR Settings</h3>
                     </div>
-                    <span class="payment-receipt-badge sandbox-state-badge">Sandbox only · Transfers disabled</span>
+                    <span class="payment-receipt-badge sandbox-state-badge">Manual merchant setup · Unverified</span>
                 </div>
-                <p class="small text-body-secondary">These details are stored for demonstration only. CourtGrid has no wallet processor connected and will not initiate payouts.</p>
+                <p class="small text-body-secondary">Upload the official QR image issued by your wallet provider. Customer transfers are external and must be verified by the venue; CourtGrid does not process or automatically route funds.</p>
                 <p class="small fw-semibold mb-3">{{ panel.facility.payout_qr_label|default:"No QR configured" }} · {{ panel.facility.wallet_account_name|default:"No account name configured" }}</p>
-                <form method="post" class="row g-3">
+                {% if panel.facility.payment_qr_image %}
+                    <img src="{{ panel.facility.payment_qr_image.url }}" class="owner-portal-qr mb-3" alt="Merchant QR for {{ panel.facility.name }}">
+                {% endif %}
+                <form method="post" enctype="multipart/form-data" class="row g-3">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="save_payout_wallet">
                     <input type="hidden" name="facility_id" value="{{ panel.facility.pk }}">
@@ -79,7 +82,7 @@
                             {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
                         </div>
                     {% endfor %}
-                    <div class="col-12"><button class="btn btn-outline-primary" type="submit">Save Payout Destination</button></div>
+                    <div class="col-12"><button class="btn btn-outline-primary" type="submit">Save Merchant Details</button></div>
                 </form>
             </section>
 
@@ -183,7 +186,7 @@
         </form>
         {% for closure in closures %}
             <div class="d-flex justify-content-between align-items-center border-top py-2">
-                <span><strong>{{ closure.facility.name }}</strong> · {{ closure.resource.name|default:"All courts" }} · {{ closure.start_datetime|date:"M j, Y H:i" }}–{{ closure.end_datetime|date:"M j, Y H:i" }} · {{ closure.reason }}</span>
+                <span><strong>{{ closure.facility.name }}</strong> · {{ closure.resource.name|default:"All courts" }} · {{ closure.start_datetime|date:"M j, Y g:i A" }}–{{ closure.end_datetime|date:"g:i A" }} · {{ closure.reason }}</span>
                 <form method="post">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="delete_closure">
@@ -202,21 +205,42 @@
         <h2 class="h4">Venue bookings</h2>
         <div class="table-responsive">
             <table class="table table-striped align-middle">
-                <thead><tr><th>Facility / Court</th><th>Sport</th><th>Date & time</th><th>Customer</th><th>Contact</th><th>Players</th><th>Roster</th><th>Gross Rate (estimate)</th><th>5% Platform Fee (estimate)</th><th>95% Net Payout (estimate)</th><th>Payment / Demo Reference</th></tr></thead>
+                <thead><tr><th>Facility / Court</th><th>Sport</th><th>Date & time</th><th>Customer</th><th>Contact</th><th>Players</th><th>Roster</th><th>Direct Collection (100%)</th><th>5% Commission Payable</th><th>95% Retained</th><th>Payment Status / Reference</th></tr></thead>
                 <tbody>
                     {% for booking in venue_bookings %}
                         <tr>
                             <td>{{ booking.resource.facility.name }} / {{ booking.resource.name }}</td>
                             <td>{{ booking.sport.name }}</td>
-                            <td>{{ booking.start_datetime|date:"M j, Y H:i" }}–{{ booking.end_datetime|date:"H:i" }}</td>
+                            <td>{{ booking.start_datetime|date:"M j, Y g:i A" }}–{{ booking.end_datetime|date:"g:i A" }}</td>
                             <td>{{ booking.user.get_username }}</td>
                             <td>{{ booking.contact_email }}<br>{{ booking.contact_phone }}</td>
                             <td>{{ booking.participant_count }}</td>
                             <td>{{ booking.participant_names|default:"—" }}</td>
                             <td>₱{{ booking.total_price }}</td>
-                            <td>₱{{ booking.platform_fee_amount }}</td>
+                            <td>
+                                {% if booking.platform_fee_collected %}
+                                    <span class="payment-receipt-badge">Collected</span>
+                                {% elif booking.payment_status == 'paid' %}
+                                    ₱{{ booking.platform_fee_amount }} · Payable
+                                {% else %}
+                                    <span class="text-body-secondary">Not due until payment is verified</span>
+                                {% endif %}
+                            </td>
                             <td>₱{{ booking.owner_payout_amount }}</td>
-                            <td><span class="payment-receipt-badge payment-pending-badge">{{ booking.get_payment_method_display }} · Pending (demo)</span><br><small>Reservation ref: {{ booking.payment_reference }}</small></td>
+                            <td>
+                                <span class="payment-receipt-badge {% if booking.payment_status == 'pending' %}payment-pending-badge{% endif %}">{{ booking.get_payment_method_display }} · {{ booking.get_payment_status_display }}</span>
+                                <br><small>Reservation ref: {{ booking.payment_reference }}</small>
+                                {% if booking.payment_status == 'pending' %}
+                                    <form method="post" class="mt-1">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="verify_payment">
+                                        <input type="hidden" name="booking_id" value="{{ booking.pk }}">
+                                        <button class="btn btn-sm btn-outline-success" type="submit">Mark Payment Received</button>
+                                    </form>
+                                {% elif booking.payment_verified_at %}
+                                    <br><small>Verified {{ booking.payment_verified_at|date:"M j, Y g:i A" }}</small>
+                                {% endif %}
+                            </td>
                         </tr>
                     {% empty %}
                         <tr><td colspan="11" class="text-body-secondary">No confirmed venue bookings.</td></tr>

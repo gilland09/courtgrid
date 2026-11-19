@@ -30,6 +30,11 @@ class Facility(models.Model):
     maya_number = models.CharField(max_length=20, blank=True, default='')
     wallet_account_name = models.CharField(max_length=120, blank=True, default='')
     payout_qr_label = models.CharField(max_length=120, blank=True, default='')
+    payment_qr_image = models.FileField(
+        upload_to='owner_qrs/',
+        blank=True,
+        null=True,
+    )
     address = models.TextField(blank=True)
     barangay = models.CharField(max_length=100, blank=True)
     latitude = models.DecimalField(

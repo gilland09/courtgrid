@@ -40,6 +40,9 @@ class BookingAPITests(TransactionTestCase):
             name='Synthetic Test Facility',
             capacity=20,
             default_hourly_rate='300.00',
+            wallet_account_name='Test Venue Merchant',
+            gcash_number='09171234567',
+            maya_number='09181234567',
         )
         self.sport = Sport.objects.create(name='Basketball', slug='basketball')
         self.facility_sport = FacilitySport.objects.create(
@@ -113,6 +116,10 @@ class BookingAPITests(TransactionTestCase):
         self.assertEqual(response.data['payment_method'], 'gcash')
         self.assertEqual(response.data['payment_status'], 'pending')
         self.assertRegex(response.data['payment_reference'], r'^CG-\d{8}-[A-F0-9]{6}$')
+        self.assertEqual(response.data['merchant_account_name'], 'Test Venue Merchant')
+        self.assertEqual(response.data['merchant_gcash_number'], '09171234567')
+        self.assertEqual(response.data['merchant_maya_number'], '09181234567')
+        self.assertEqual(response.data['merchant_qr_url'], '')
         self.assertEqual(response.data['participant_names'], 'Alex, Sam')
         self.assertEqual(Booking.objects.get().participant_names, 'Alex, Sam')
         self.assertEqual(Booking.objects.count(), 1)
@@ -383,6 +390,38 @@ class BookingAPITests(TransactionTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('closure', str(response.data))
         self.assertEqual(Booking.objects.count(), 0)
+
+    def test_mid_hour_closure_blocks_overlapping_hour_and_frees_the_next_hour(self):
+        closure_start = timezone.make_aware(
+            datetime.combine(self.start_datetime.date(), time(13, 36))
+        )
+        closure_end = timezone.make_aware(
+            datetime.combine(self.start_datetime.date(), time(17, 35))
+        )
+        FacilityClosure.objects.create(
+            facility=self.facility,
+            start_datetime=closure_start,
+            end_datetime=closure_end,
+            reason='Mid-hour maintenance',
+        )
+        blocked_start = timezone.make_aware(
+            datetime.combine(self.start_datetime.date(), time(17))
+        )
+        blocked_response = self.create_booking(
+            start_datetime=blocked_start.isoformat(),
+            end_datetime=(blocked_start + timedelta(hours=1)).isoformat(),
+        )
+        free_start = timezone.make_aware(
+            datetime.combine(self.start_datetime.date(), time(18))
+        )
+        free_response = self.create_booking(
+            start_datetime=free_start.isoformat(),
+            end_datetime=(free_start + timedelta(hours=1)).isoformat(),
+        )
+
+        self.assertEqual(blocked_response.status_code, 400)
+        self.assertIn('closure', str(blocked_response.data).lower())
+        self.assertEqual(free_response.status_code, 201)
 
     def test_resource_must_be_configured_for_requested_sport(self):
         other_sport = Sport.objects.create(name='Volleyball', slug='volleyball')

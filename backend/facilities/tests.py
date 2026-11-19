@@ -10,6 +10,7 @@ from rest_framework.test import APITestCase
 
 from bookings.models import Booking
 
+from .availability import active_resource_offerings, evaluate_serial_slots
 from .models import (
     BookableResource,
     Facility,
@@ -52,8 +53,8 @@ class FacilityDetailPageTests(APITestCase):
         self.assertTemplateUsed(response, 'facility_detail.html')
         self.assertContains(response, self.facility.name)
         self.assertContains(response, self.facility.barangay)
-        self.assertContains(response, '08:00')
-        self.assertContains(response, '17:00')
+        self.assertContains(response, '8:00 AM')
+        self.assertContains(response, '5:00 PM')
         self.assertContains(response, 'id="availability-date"')
         self.assertContains(response, 'id="availability-sport"')
         self.assertContains(response, 'id="quick-date-pills"')
@@ -329,6 +330,56 @@ class SerialAvailabilityAPITests(APITestCase):
             timezone.make_aware(
                 datetime.combine(self.search_date, time(12))
             ),
+        )
+
+    def test_schedule_grid_includes_booked_closed_and_available_slots(self):
+        response = self.client.get(
+            '/api/availability/search',
+            {
+                'date': self.search_date.isoformat(),
+                'sport': self.sport.slug,
+                'facility': self.facility.pk,
+                'mode': 'serial',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        grid = response.data['slots']
+        self.assertEqual(
+            [slot['availability'] for slot in grid],
+            ['booked', 'closed', 'available'],
+        )
+        self.assertEqual(grid[1]['reason'], 'Temporary resource maintenance')
+
+    def test_serial_schedule_marks_current_day_slots_as_passed(self):
+        today = timezone.localdate()
+        FacilityOperatingHours.objects.create(
+            facility=self.facility,
+            day_of_week=today.weekday(),
+            start_time=time(9),
+            end_time=time(12),
+        )
+        SportSchedule.objects.create(
+            facility_sport=self.facility_sport,
+            day_of_week=today.weekday(),
+            start_time=time(9),
+            end_time=time(12),
+        )
+        evaluated_at = timezone.make_aware(datetime.combine(today, time(10, 30)))
+        slots = evaluate_serial_slots(
+            active_resource_offerings(
+                facility_id=self.facility.pk,
+                sport=self.sport,
+            ),
+            today,
+            evaluated_at=evaluated_at,
+        )
+
+        self.assertTrue(slots)
+        self.assertEqual(slots[0]['availability'], 'past')
+        self.assertEqual(
+            [slot['availability'] for slot in slots],
+            ['past', 'past', 'available'],
         )
 
     def test_explicit_serial_mode_returns_expected_available_slot(self):

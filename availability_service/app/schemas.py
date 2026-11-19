@@ -1,4 +1,5 @@
 from datetime import date, datetime, time
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -43,6 +44,7 @@ class ClosureData(BoundaryModel):
     resource_id: int | None = None
     start_datetime: datetime
     end_datetime: datetime
+    reason: str = ''
 
     @field_validator('start_datetime', 'end_datetime')
     @classmethod
@@ -89,6 +91,12 @@ class AvailableSlot(BoundaryModel):
     end_datetime: datetime
 
 
+class ScheduleSlot(AvailableSlot):
+    availability: Literal['available', 'closed', 'booked', 'past']
+    reason: str = ''
+
+
 class AvailabilityResponse(BoundaryModel):
     available_slots: list[AvailableSlot]
+    slots: list[ScheduleSlot] = Field(default_factory=list)
     parallel_elapsed_time: float = Field(ge=0)

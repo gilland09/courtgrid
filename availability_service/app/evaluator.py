@@ -24,6 +24,7 @@ def evaluate_facility_slots(
     bookings: list[dict[str, Any]],
     target_date: str,
     evaluated_at: str,
+    include_unavailable: bool = False,
 ) -> list[dict[str, Any]]:
     """Evaluate one facility using only picklable JSON-compatible values."""
     search_date = date.fromisoformat(target_date)
@@ -71,8 +72,6 @@ def evaluate_facility_slots(
                 end = start + timedelta(hours=1)
                 if end.date() != start.date():
                     continue
-                if start <= current_time:
-                    continue
                 if not any(
                     time.fromisoformat(hours['start_time']) <= start.time().replace(tzinfo=None)
                     and time.fromisoformat(hours['end_time']) >= end.time().replace(tzinfo=None)
@@ -93,19 +92,38 @@ def evaluate_facility_slots(
                     and datetime.fromisoformat(closure['end_datetime']) > start
                     for closure in closures
                 )
-                if overlapping_closure:
-                    continue
-
                 overlapping_booking = any(
                     booking['resource_id'] == resource_id
                     and datetime.fromisoformat(booking['start_datetime']) < end
                     and datetime.fromisoformat(booking['end_datetime']) > start
                     for booking in bookings
                 )
-                if overlapping_booking:
+                if start <= current_time:
+                    availability = 'past'
+                    reason = ''
+                elif overlapping_closure:
+                    availability = 'closed'
+                    reason = next(
+                        (
+                            closure.get('reason', '')
+                            for closure in closures
+                            if closure['facility_id'] == facility_id
+                            and closure['resource_id'] in (None, resource_id)
+                            and datetime.fromisoformat(closure['start_datetime']) < end
+                            and datetime.fromisoformat(closure['end_datetime']) > start
+                        ),
+                        '',
+                    )
+                elif overlapping_booking:
+                    availability = 'booked'
+                    reason = ''
+                else:
+                    availability = 'available'
+                    reason = ''
+                if availability != 'available' and not include_unavailable:
                     continue
 
-                available_slots.append({
+                slot = {
                     'facility_id': facility_id,
                     'resource_id': resource_id,
                     'sport_id': next(
@@ -114,17 +132,23 @@ def evaluate_facility_slots(
                     ),
                     'start_datetime': start.isoformat(),
                     'end_datetime': end.isoformat(),
-                })
+                }
+                if include_unavailable:
+                    slot['availability'] = availability
+                    slot['reason'] = reason
+                available_slots.append(slot)
 
     return available_slots
 
 
-def run_parallel_evaluation(payload) -> tuple[list[dict[str, Any]], float]:
+def run_parallel_evaluation_with_schedule(
+    payload,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], float]:
     request_data = payload.model_dump(mode='json')
     facilities = request_data['facilities']
     started_at = perf_counter()
     if not facilities:
-        return [], perf_counter() - started_at
+        return [], [], perf_counter() - started_at
 
     worker_count = min(len(facilities), 4)
     worker = partial(
@@ -134,12 +158,23 @@ def run_parallel_evaluation(payload) -> tuple[list[dict[str, Any]], float]:
         bookings=request_data['existing_bookings'],
         target_date=request_data['target_date'],
         evaluated_at=request_data['evaluated_at'],
+        include_unavailable=True,
     )
     with ProcessPoolExecutor(max_workers=worker_count) as executor:
         facility_results = executor.map(worker, facilities)
-        available_slots = [
+        schedule_slots = [
             slot
             for facility_slots in facility_results
             for slot in facility_slots
         ]
-    return available_slots, perf_counter() - started_at
+    available_slots = [
+        {key: value for key, value in slot.items() if key not in {'availability', 'reason'}}
+        for slot in schedule_slots
+        if slot['availability'] == 'available'
+    ]
+    return available_slots, schedule_slots, perf_counter() - started_at
+
+
+def run_parallel_evaluation(payload) -> tuple[list[dict[str, Any]], float]:
+    available_slots, _schedule_slots, elapsed = run_parallel_evaluation_with_schedule(payload)
+    return available_slots, elapsed

@@ -1,4 +1,5 @@
 from django import forms
+from django.db.models import Q
 
 from .models import (
     BookableResource,
@@ -70,18 +71,36 @@ class FacilityPayoutWalletForm(forms.ModelForm):
             'gcash_number',
             'maya_number',
             'payout_qr_label',
+            'payment_qr_image',
         )
         widgets = {
             'wallet_account_name': forms.TextInput(attrs={'autocomplete': 'organization'}),
             'gcash_number': forms.TextInput(attrs={'autocomplete': 'off', 'inputmode': 'tel'}),
             'maya_number': forms.TextInput(attrs={'autocomplete': 'off', 'inputmode': 'tel'}),
             'payout_qr_label': forms.TextInput(),
+            'payment_qr_image': forms.ClearableFileInput(attrs={'accept': 'image/*'}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
             field.widget.attrs.setdefault('class', 'form-control')
+
+    def clean_payment_qr_image(self):
+        uploaded = self.cleaned_data.get('payment_qr_image')
+        if not uploaded or not hasattr(uploaded, 'read'):
+            return uploaded
+        signature = uploaded.read(12)
+        uploaded.seek(0)
+        valid_signatures = (
+            signature.startswith(b'\x89PNG\r\n\x1a\n'),
+            signature.startswith(b'\xff\xd8\xff'),
+            signature.startswith((b'GIF87a', b'GIF89a')),
+            signature[:4] == b'RIFF' and signature[8:12] == b'WEBP',
+        )
+        if not any(valid_signatures):
+            raise forms.ValidationError('Upload a PNG, JPEG, GIF, or WebP QR image.')
+        return uploaded
 
 
 class FacilityOperatingHoursForm(forms.ModelForm):
@@ -129,6 +148,26 @@ class FacilityClosureForm(forms.ModelForm):
         cleaned_data = super().clean()
         facility = cleaned_data.get('facility')
         resource = cleaned_data.get('resource')
+        start_datetime = cleaned_data.get('start_datetime')
+        end_datetime = cleaned_data.get('end_datetime')
         if facility and resource and resource.facility_id != facility.pk:
             self.add_error('resource', 'Select a court belonging to this facility.')
+        if facility and start_datetime and end_datetime:
+            overlaps = FacilityClosure.objects.filter(
+                facility=facility,
+                start_datetime__lt=end_datetime,
+                end_datetime__gt=start_datetime,
+            )
+            overlaps = overlaps.filter(
+                Q(resource__isnull=True) | Q(resource=resource)
+                if resource
+                else Q()
+            )
+            if self.instance.pk:
+                overlaps = overlaps.exclude(pk=self.instance.pk)
+            if overlaps.exists():
+                self.add_error(
+                    None,
+                    'This closure overlaps an existing closure for the selected court or facility.',
+                )
         return cleaned_data

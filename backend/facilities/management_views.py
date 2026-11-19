@@ -1,11 +1,13 @@
-from functools import wraps
 from decimal import Decimal
+from functools import wraps
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import PermissionDenied
-from django.db.models import Sum
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.db import transaction
+from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 
 from bookings.models import Booking, UserProfile, get_user_role
 
@@ -82,9 +84,21 @@ def owner_dashboard_context(user, facility_form=None):
         .order_by('start_datetime')
     )
     financial_totals = bookings.aggregate(
-        gross=Sum('total_price'),
-        platform_fee=Sum('platform_fee_amount'),
-        owner_payout=Sum('owner_payout_amount'),
+        gross=Sum(
+            'total_price',
+            filter=Q(payment_status=Booking.PaymentStatus.PAID),
+        ),
+        platform_fee=Sum(
+            'platform_fee_amount',
+            filter=Q(
+                payment_status=Booking.PaymentStatus.PAID,
+                platform_fee_collected=False,
+            ),
+        ),
+        owner_payout=Sum(
+            'owner_payout_amount',
+            filter=Q(payment_status=Booking.PaymentStatus.PAID),
+        ),
     )
     return {
         'facilities': facilities,
@@ -107,6 +121,56 @@ def portal_error(request, form, message):
         for field, errors in form.errors.items():
             for error in errors:
                 messages.error(request, f'{field}: {error}')
+
+
+def create_closure_and_cancel_bookings(closure, user):
+    with transaction.atomic():
+        facility = Facility.objects.select_for_update().get(pk=closure.facility_id)
+        overlaps = FacilityClosure.objects.filter(
+            facility=facility,
+            start_datetime__lt=closure.end_datetime,
+            end_datetime__gt=closure.start_datetime,
+        )
+        if closure.resource_id:
+            overlaps = overlaps.filter(
+                Q(resource__isnull=True) | Q(resource_id=closure.resource_id),
+            )
+        if overlaps.exists():
+            raise ValidationError(
+                'This closure overlaps an existing closure for the selected court or facility.'
+            )
+        closure.created_by = user
+        closure.save()
+        conflicting_bookings = Booking.objects.filter(
+            resource__facility=facility,
+            status=Booking.Status.CONFIRMED,
+            start_datetime__lt=closure.end_datetime,
+            end_datetime__gt=closure.start_datetime,
+        )
+        if closure.resource_id:
+            conflicting_bookings = conflicting_bookings.filter(
+                resource_id=closure.resource_id,
+            )
+        now = timezone.now()
+        cancelled_count = conflicting_bookings.update(
+            status=Booking.Status.CANCELLED,
+            cancelled_at=now,
+            cancellation_reason='Cancelled due to court closure',
+            updated_at=now,
+        )
+    return cancelled_count
+
+
+def remove_facility_closure(facilities, closure_id):
+    closure_queryset = FacilityClosure.objects.filter(facility__in=facilities)
+    facility_id = get_object_or_404(closure_queryset, pk=closure_id).facility_id
+    with transaction.atomic():
+        Facility.objects.select_for_update().get(pk=facility_id)
+        closure = get_object_or_404(
+            closure_queryset.select_for_update(),
+            pk=closure_id,
+        )
+        closure.delete()
 
 
 @roles_required(UserProfile.Role.COURT_OWNER, UserProfile.Role.ADMIN)
@@ -161,7 +225,11 @@ def owner_dashboard_view(request):
                 facilities,
                 pk=request.POST.get('facility_id'),
             )
-            form = FacilityPayoutWalletForm(request.POST, instance=facility)
+            form = FacilityPayoutWalletForm(
+                request.POST,
+                request.FILES,
+                instance=facility,
+            )
             if form.is_valid():
                 form.save()
                 messages.success(
@@ -170,6 +238,29 @@ def owner_dashboard_view(request):
                 )
             else:
                 portal_error(request, form, 'Please correct the payout destination settings.')
+        elif action == 'verify_payment':
+            with transaction.atomic():
+                booking = get_object_or_404(
+                    Booking.objects.select_for_update().filter(
+                        resource__facility__in=facilities,
+                        status=Booking.Status.CONFIRMED,
+                        payment_status=Booking.PaymentStatus.PENDING,
+                    ),
+                    pk=request.POST.get('booking_id'),
+                )
+                booking.payment_status = Booking.PaymentStatus.PAID
+                booking.payment_verified_at = timezone.now()
+                booking.payment_verified_by = request.user
+                booking.save(update_fields=(
+                    'payment_status',
+                    'payment_verified_at',
+                    'payment_verified_by',
+                    'updated_at',
+                ))
+            messages.success(
+                request,
+                f'Payment for reservation {booking.payment_reference} was marked received by the venue.',
+            )
         elif action == 'save_hours':
             facility = get_object_or_404(facilities, pk=request.POST.get('facility_id'))
             hours_id = request.POST.get('hours_id')
@@ -189,17 +280,24 @@ def owner_dashboard_view(request):
             form = FacilityClosureForm(request.POST, facilities=facilities)
             if form.is_valid():
                 closure = form.save(commit=False)
-                closure.created_by = request.user
-                closure.save()
-                messages.success(request, 'Court closure scheduled.')
+                try:
+                    cancelled_count = create_closure_and_cancel_bookings(
+                        closure,
+                        request.user,
+                    )
+                except ValidationError as exc:
+                    portal_error(request, form, str(exc))
+                else:
+                    messages.success(request, 'Court closure scheduled.')
+                    if cancelled_count:
+                        messages.warning(
+                            request,
+                            f'{cancelled_count} conflicting reservation(s) were cancelled due to this closure.',
+                        )
             else:
                 portal_error(request, form, 'Please correct the closure details.')
         elif action == 'delete_closure':
-            closure = get_object_or_404(
-                FacilityClosure.objects.filter(facility__in=facilities),
-                pk=request.POST.get('closure_id'),
-            )
-            closure.delete()
+            remove_facility_closure(facilities, request.POST.get('closure_id'))
             messages.success(request, 'Court closure removed.')
         else:
             raise PermissionDenied('Unknown management action.')
@@ -285,19 +383,26 @@ def management_closures_view(request):
     facilities = owner_facilities(request.user)
     if request.method == 'POST':
         if request.POST.get('action') == 'delete_closure':
-            closure = get_object_or_404(
-                FacilityClosure.objects.filter(facility__in=facilities),
-                pk=request.POST.get('closure_id'),
-            )
-            closure.delete()
+            remove_facility_closure(facilities, request.POST.get('closure_id'))
             messages.success(request, 'Court closure removed.')
         elif request.POST.get('action') == 'create_closure':
             form = FacilityClosureForm(request.POST, facilities=facilities)
             if form.is_valid():
                 closure = form.save(commit=False)
-                closure.created_by = request.user
-                closure.save()
-                messages.success(request, 'Court closure scheduled.')
+                try:
+                    cancelled_count = create_closure_and_cancel_bookings(
+                        closure,
+                        request.user,
+                    )
+                except ValidationError as exc:
+                    portal_error(request, form, str(exc))
+                else:
+                    messages.success(request, 'Court closure scheduled.')
+                    if cancelled_count:
+                        messages.warning(
+                            request,
+                            f'{cancelled_count} conflicting reservation(s) were cancelled due to this closure.',
+                        )
             else:
                 portal_error(request, form, 'Please correct the closure details.')
         else:

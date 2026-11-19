@@ -1,7 +1,10 @@
 from datetime import timedelta
 from decimal import Decimal
+from tempfile import TemporaryDirectory
 
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 from django.test import TestCase
@@ -184,6 +187,188 @@ class InAppManagementPortalTests(TestCase):
         self.assertEqual(self.other_facility.gcash_number, '')
         self.assertEqual(self.other_facility.maya_number, '')
 
+    def test_owner_can_upload_a_provider_issued_merchant_qr_image(self):
+        image_bytes = b'\x89PNG\r\n\x1a\n' + (b'\x00' * 32)
+        with TemporaryDirectory() as media_root:
+            with override_settings(MEDIA_ROOT=media_root):
+                self.client.force_login(self.owner)
+                response = self.client.post(
+                    reverse('owner_dashboard'),
+                    {
+                        'action': 'save_payout_wallet',
+                        'facility_id': self.facility.pk,
+                        'wallet_account_name': 'Verified Merchant Account',
+                        'gcash_number': '09171234567',
+                        'maya_number': '',
+                        'payout_qr_label': 'GCash Merchant QR',
+                        'payment_qr_image': SimpleUploadedFile(
+                            'merchant-qr.png',
+                            image_bytes,
+                            content_type='image/png',
+                        ),
+                    },
+                )
+                self.assertRedirects(response, reverse('owner_dashboard'))
+                self.facility.refresh_from_db()
+                self.assertTrue(self.facility.payment_qr_image.name.startswith('owner_qrs/'))
+                self.assertTrue(self.facility.payment_qr_image.storage.exists(
+                    self.facility.payment_qr_image.name
+                ))
+
+    def test_owner_closure_cancels_conflicting_booking_with_reason(self):
+        start = timezone.localtime(timezone.now() + timedelta(days=3)).replace(
+            hour=13,
+            minute=36,
+            second=0,
+            microsecond=0,
+        )
+        end = start.replace(hour=17, minute=35)
+        booking_start = start.replace(hour=17, minute=0)
+        booking = Booking.objects.create(
+            user=self.customer,
+            resource=self.resource,
+            sport=self.sport,
+            start_datetime=booking_start,
+            end_datetime=booking_start + timedelta(hours=1),
+            participant_count=2,
+            rate_snapshot=Decimal('200.00'),
+            total_price=Decimal('200.00'),
+            payment_status=Booking.PaymentStatus.PAID,
+        )
+        self.client.force_login(self.owner)
+
+        response = self.client.post(
+            reverse('owner_dashboard'),
+            {
+                'action': 'create_closure',
+                'facility': self.facility.pk,
+                'resource': self.resource.pk,
+                'start_datetime': start.strftime('%Y-%m-%dT%H:%M'),
+                'end_datetime': end.strftime('%Y-%m-%dT%H:%M'),
+                'reason': 'Mid-hour repair',
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse('owner_dashboard'))
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CANCELLED)
+        self.assertEqual(booking.cancellation_reason, 'Cancelled due to court closure')
+        dashboard_response = self.client.get(reverse('owner_dashboard'))
+        self.assertContains(dashboard_response, '1 conflicting reservation(s) were cancelled')
+
+    def test_overlapping_closures_are_rejected(self):
+        start = timezone.localtime(timezone.now() + timedelta(days=5)).replace(
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        existing = FacilityClosure.objects.create(
+            facility=self.facility,
+            resource=self.resource,
+            start_datetime=start,
+            end_datetime=start + timedelta(hours=2),
+            reason='Existing work',
+        )
+        self.client.force_login(self.owner)
+
+        response = self.client.post(
+            reverse('management_closures'),
+            {
+                'action': 'create_closure',
+                'facility': self.facility.pk,
+                'resource': self.resource.pk,
+                'start_datetime': (start + timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M'),
+                'end_datetime': (start + timedelta(hours=3)).strftime('%Y-%m-%dT%H:%M'),
+                'reason': 'Duplicate work',
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse('management_closures'))
+        self.assertEqual(FacilityClosure.objects.count(), 1)
+        self.assertTrue(FacilityClosure.objects.filter(pk=existing.pk).exists())
+        closure_page = self.client.get(reverse('management_closures'))
+        self.assertContains(closure_page, 'overlaps an existing closure')
+
+    def test_owner_can_verify_external_payment_after_receiving_it(self):
+        booking = Booking.objects.create(
+            user=self.customer,
+            resource=self.resource,
+            sport=self.sport,
+            start_datetime=timezone.now() + timedelta(days=8),
+            end_datetime=timezone.now() + timedelta(days=8, hours=1),
+            participant_count=2,
+            rate_snapshot=Decimal('200.00'),
+            total_price=Decimal('200.00'),
+        )
+        self.client.force_login(self.owner)
+
+        response = self.client.post(
+            reverse('owner_dashboard'),
+            {'action': 'verify_payment', 'booking_id': booking.pk},
+        )
+
+        self.assertRedirects(response, reverse('owner_dashboard'))
+        booking.refresh_from_db()
+        self.assertEqual(booking.payment_status, Booking.PaymentStatus.PAID)
+        self.assertEqual(booking.payment_verified_by, self.owner)
+        self.assertIsNotNone(booking.payment_verified_at)
+
+    def test_owner_cannot_verify_payment_for_another_owners_booking(self):
+        booking = Booking.objects.create(
+            user=self.customer,
+            resource=self.other_resource,
+            sport=self.sport,
+            start_datetime=timezone.now() + timedelta(days=9),
+            end_datetime=timezone.now() + timedelta(days=9, hours=1),
+            participant_count=2,
+            rate_snapshot=Decimal('300.00'),
+            total_price=Decimal('300.00'),
+        )
+        self.client.force_login(self.owner)
+
+        response = self.client.post(
+            reverse('owner_dashboard'),
+            {'action': 'verify_payment', 'booking_id': booking.pk},
+        )
+
+        self.assertEqual(response.status_code, 404)
+        booking.refresh_from_db()
+        self.assertEqual(booking.payment_status, Booking.PaymentStatus.PENDING)
+
+    def test_admin_commission_collection_ledger_tracks_verified_payments(self):
+        booking = Booking.objects.create(
+            user=self.customer,
+            resource=self.resource,
+            sport=self.sport,
+            start_datetime=timezone.now() + timedelta(days=10),
+            end_datetime=timezone.now() + timedelta(days=10, hours=1),
+            participant_count=2,
+            rate_snapshot=Decimal('200.00'),
+            total_price=Decimal('200.00'),
+            payment_status=Booking.PaymentStatus.PAID,
+            payment_verified_at=timezone.now(),
+            payment_verified_by=self.owner,
+        )
+        self.client.force_login(self.admin)
+
+        dashboard = self.client.get(reverse('admin_dashboard'))
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertEqual(dashboard.context['financial_totals']['platform_fee'], Decimal('10.00'))
+        self.assertContains(dashboard, 'Owner Commission Collection Ledger')
+
+        response = self.client.post(
+            reverse('admin_dashboard'),
+            {'action': 'collect_commission', 'booking_id': booking.pk},
+        )
+
+        self.assertRedirects(response, reverse('admin_dashboard'))
+        booking.refresh_from_db()
+        self.assertTrue(booking.platform_fee_collected)
+        self.assertEqual(booking.platform_fee_collected_by, self.admin)
+        self.assertIsNotNone(booking.platform_fee_collected_at)
+
     def test_owner_cannot_edit_another_owners_facility(self):
         self.client.force_login(self.owner)
 
@@ -225,6 +410,7 @@ class InAppManagementPortalTests(TestCase):
             participant_count=2,
             rate_snapshot=Decimal('200.00'),
             total_price=Decimal('200.00'),
+            payment_status=Booking.PaymentStatus.PAID,
         )
         Booking.objects.create(
             user=self.customer,
@@ -351,6 +537,7 @@ class InAppManagementPortalTests(TestCase):
             participant_count=2,
             rate_snapshot=Decimal('200.00'),
             total_price=Decimal('200.00'),
+            payment_status=Booking.PaymentStatus.PAID,
         )
         self.client.force_login(self.owner)
 

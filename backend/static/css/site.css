@@ -567,6 +567,76 @@ form textarea:focus {
     color: #fff;
 }
 
+.slot-button:disabled,
+.slot-button.is-booked,
+.slot-button.is-closed,
+.slot-button.is-past {
+    border-color: #d3d8d4;
+    background: #e9ecea;
+    color: #647068;
+    cursor: not-allowed;
+    opacity: 1;
+}
+
+.slot-button.is-past {
+    color: #7a7f7b;
+    background: #f0f1f0;
+}
+
+.legend-dot.passed {
+    background: #8b8f8c;
+}
+
+.owner-merchant-payment {
+    padding: 1rem;
+    border: 1px solid rgba(112, 128, 144, 0.2);
+    border-radius: 12px;
+    background: #f7f9f7;
+}
+
+.owner-merchant-payment[hidden] {
+    display: none;
+}
+
+.owner-merchant-qr,
+.owner-portal-qr {
+    display: block;
+    width: min(250px, 100%);
+    max-height: 250px;
+    object-fit: contain;
+    border: 1px solid #e1e6e2;
+    border-radius: 10px;
+    background: #fff;
+}
+
+.owner-merchant-qr[hidden] {
+    display: none;
+}
+
+.receipt-print-area {
+    background: #fff;
+}
+
+@media print {
+    body * {
+        visibility: hidden !important;
+    }
+
+    .receipt-print-area,
+    .receipt-print-area * {
+        visibility: visible !important;
+    }
+
+    .receipt-print-area {
+        position: fixed !important;
+        inset: 0 !important;
+        width: 100% !important;
+        border: 0 !important;
+        background: #fff !important;
+        color: #111 !important;
+    }
+}
+
 .selected-slot-bar {
     position: fixed;
     z-index: 1040;

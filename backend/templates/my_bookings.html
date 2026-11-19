@@ -41,6 +41,21 @@
         </section>
     </div>
 </div>
+
+<div class="modal fade" id="booking-receipt-modal" tabindex="-1" aria-labelledby="booking-receipt-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <section class="modal-content booking-modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h2 class="modal-title h4" id="booking-receipt-title">CourtGrid Digital Receipt</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="booking-receipt-content" class="booking-summary receipt-print-area"></div>
+                <button id="print-saved-booking-receipt" type="button" class="btn btn-outline-primary w-100 mt-3">Print / Save Receipt</button>
+            </div>
+        </section>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}

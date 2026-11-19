@@ -128,10 +128,28 @@ class Booking(models.Model):
         default='',
         unique=True,
     )
+    payment_verified_at = models.DateTimeField(null=True, blank=True)
+    payment_verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name='bookings_payment_verified',
+        null=True,
+        blank=True,
+    )
+    platform_fee_collected = models.BooleanField(default=False)
+    platform_fee_collected_at = models.DateTimeField(null=True, blank=True)
+    platform_fee_collected_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name='booking_commissions_collected',
+        null=True,
+        blank=True,
+    )
     currency = models.CharField(max_length=3, default='PHP')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancellation_reason = models.CharField(max_length=180, blank=True, default='')
 
     class Meta:
         ordering = ('-start_datetime',)

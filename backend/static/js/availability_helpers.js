@@ -13,6 +13,15 @@
         return `${resourceId}-${startTime}`;
     }
 
+    function formatSlotTime(value) {
+        return new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Asia/Manila',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+        }).format(new Date(value));
+    }
+
     function calculateSlotTotal(slots, rates) {
         return slots.reduce(
             (total, slot) => total + Number(rates[String(slot.sportId)] || 0),
@@ -54,6 +63,7 @@
     global.CourtGridAvailabilityHelpers = {
         getSevenDayDates,
         getSlotKey,
+        formatSlotTime,
         calculateSlotTotal,
         calculateFeeBreakdown,
         resizePlayerNames,

@@ -8,6 +8,7 @@ const {
     calculateFeeBreakdown,
     getSevenDayDates,
     getSlotKey,
+    formatSlotTime,
     isValidEmail,
     isValidPhone,
     resizePlayerNames,
@@ -31,6 +32,12 @@ test('seven date pills stay anchored to the initial Manila date', () => {
 test('slot identity includes both the resource and start time', () => {
     assert.equal(getSlotKey(4, '2026-11-19T17:00:00+08:00'), '4-2026-11-19T17:00:00+08:00');
     assert.notEqual(getSlotKey(4, 'slot-a'), getSlotKey(5, 'slot-a'));
+});
+
+test('slot times use 12-hour AM/PM formatting in Manila time', () => {
+    assert.equal(formatSlotTime('2026-11-18T08:00:00+08:00'), '8:00 AM');
+    assert.equal(formatSlotTime('2026-11-18T13:36:00+08:00'), '1:36 PM');
+    assert.equal(formatSlotTime('2026-11-18T21:00:00+08:00'), '9:00 PM');
 });
 
 test('selected slots total their per-slot hourly rates', () => {

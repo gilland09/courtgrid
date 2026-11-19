@@ -76,6 +76,7 @@ def _serialize_closure(closure: FacilityClosure) -> dict:
         'resource_id': closure.resource_id,
         'start_datetime': closure.start_datetime.isoformat(),
         'end_datetime': closure.end_datetime.isoformat(),
+        'reason': closure.reason,
     }
 
 
@@ -161,6 +162,7 @@ def fetch_parallel_availability(
     if (
         not isinstance(result, dict)
         or not isinstance(result.get('available_slots'), list)
+        or not isinstance(result.get('slots', result.get('available_slots')), list)
         or isinstance(elapsed_time, bool)
         or not isinstance(elapsed_time, (int, float))
         or not isfinite(elapsed_time)
@@ -203,5 +205,31 @@ def fetch_parallel_availability(
             if parsed_datetime.tzinfo is None or parsed_datetime.utcoffset() is None:
                 raise AvailabilityServiceError(
                     'Availability service returned a naive available slot datetime.'
+                )
+    for slot in result.get('slots', result['available_slots']):
+        if (
+            not isinstance(slot, dict)
+            or not expected_slot_fields.issubset(slot)
+            or slot.get('availability', 'available')
+            not in {'available', 'closed', 'booked', 'past'}
+        ):
+            raise AvailabilityServiceError(
+                'Availability service returned an invalid schedule slot.'
+            )
+        for field in ('start_datetime', 'end_datetime'):
+            value = slot.get(field)
+            if not isinstance(value, str):
+                raise AvailabilityServiceError(
+                    'Availability service returned an invalid schedule slot datetime.'
+                )
+            try:
+                parsed_datetime = datetime.fromisoformat(value)
+            except ValueError as exc:
+                raise AvailabilityServiceError(
+                    'Availability service returned an invalid schedule slot datetime.'
+                ) from exc
+            if parsed_datetime.tzinfo is None or parsed_datetime.utcoffset() is None:
+                raise AvailabilityServiceError(
+                    'Availability service returned a naive schedule slot datetime.'
                 )
     return result

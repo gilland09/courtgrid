@@ -16,6 +16,7 @@ from .availability import (
     APPLICATION_TIMEZONE,
     active_resource_offerings,
     evaluate_serial_availability,
+    evaluate_serial_slots,
 )
 from .availability_client import AvailabilityServiceError, fetch_parallel_availability
 from .models import (
@@ -217,10 +218,12 @@ class AvailabilitySearchView(APIView):
         )
         if serializer.validated_data['mode'] == 'serial':
             results = evaluate_serial_availability(offerings, search_date)
+            slots = evaluate_serial_slots(offerings, search_date)
             return Response({
                 'timezone': settings.TIME_ZONE,
                 'mode': 'serial',
                 'results': results,
+                'slots': slots,
             })
 
         facility_ids = offerings.values_list('facility_id', flat=True).distinct()
@@ -277,12 +280,14 @@ class AvailabilitySearchView(APIView):
                 exc,
             )
             results = evaluate_serial_availability(offerings, search_date)
+            slots = evaluate_serial_slots(offerings, search_date)
             return Response({
                 'timezone': settings.TIME_ZONE,
                 'mode': 'serial',
                 'requested_mode': 'parallel',
                 'fallback': True,
                 'results': results,
+                'slots': slots,
             })
 
         results = [
@@ -293,6 +298,18 @@ class AvailabilitySearchView(APIView):
             }
             for slot in service_response['available_slots']
         ]
+        schedule_slots = service_response.get('slots') or [
+            {**slot, 'availability': 'available', 'reason': ''}
+            for slot in service_response['available_slots']
+        ]
+        schedule_slots = [
+            {
+                **slot,
+                'start_datetime': datetime.fromisoformat(slot['start_datetime']),
+                'end_datetime': datetime.fromisoformat(slot['end_datetime']),
+            }
+            for slot in schedule_slots
+        ]
 
         return Response({
             'timezone': settings.TIME_ZONE,
@@ -300,4 +317,5 @@ class AvailabilitySearchView(APIView):
             'fallback': False,
             'parallel_elapsed_time': service_response['parallel_elapsed_time'],
             'results': results,
+            'slots': schedule_slots,
         })

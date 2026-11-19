@@ -7,8 +7,8 @@ from django.contrib.auth import logout as auth_logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import AuthenticationForm
 from django.db import transaction
-from django.db.models import Sum
-from django.shortcuts import redirect, render
+from django.db.models import Q, Sum
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
@@ -70,6 +70,50 @@ def home_view(request):
     login_url='login',
 )
 def admin_dashboard_view(request):
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action not in {'collect_commission', 'verify_payment'}:
+            return redirect('admin_dashboard')
+        with transaction.atomic():
+            bookings = Booking.objects.select_for_update().filter(
+                status=Booking.Status.CONFIRMED,
+            )
+            if action == 'collect_commission':
+                bookings = bookings.filter(payment_status=Booking.PaymentStatus.PAID)
+            booking = get_object_or_404(bookings, pk=request.POST.get('booking_id'))
+            if action == 'collect_commission':
+                if booking.platform_fee_collected:
+                    messages.info(request, 'The commission for this reservation is already marked collected.')
+                else:
+                    booking.platform_fee_collected = True
+                    booking.platform_fee_collected_at = timezone.now()
+                    booking.platform_fee_collected_by = request.user
+                    booking.save(update_fields=(
+                        'platform_fee_collected',
+                        'platform_fee_collected_at',
+                        'platform_fee_collected_by',
+                        'updated_at',
+                    ))
+                    messages.success(
+                        request,
+                        f'Commission of ₱{booking.platform_fee_amount} marked collected from {booking.resource.facility.owner or "the venue owner"}.',
+                    )
+            elif action == 'verify_payment':
+                if booking.payment_status != Booking.PaymentStatus.PENDING:
+                    messages.info(request, 'This reservation is not awaiting payment verification.')
+                else:
+                    booking.payment_status = Booking.PaymentStatus.PAID
+                    booking.payment_verified_at = timezone.now()
+                    booking.payment_verified_by = request.user
+                    booking.save(update_fields=(
+                        'payment_status',
+                        'payment_verified_at',
+                        'payment_verified_by',
+                        'updated_at',
+                    ))
+                    messages.success(request, 'Venue payment marked verified by the platform administrator.')
+        return redirect('admin_dashboard')
+
     now = timezone.now()
     today = timezone.localtime(now).date()
     todays_bookings = (
@@ -95,13 +139,45 @@ def admin_dashboard_view(request):
     )
     financial_totals = all_bookings.aggregate(
         gross=Sum('total_price'),
-        platform_fee=Sum('platform_fee_amount'),
-        owner_payout=Sum('owner_payout_amount'),
+        platform_fee=Sum(
+            'platform_fee_amount',
+            filter=Q(
+                payment_status=Booking.PaymentStatus.PAID,
+                platform_fee_collected=False,
+            ),
+        ),
+        owner_payout=Sum(
+            'owner_payout_amount',
+            filter=Q(payment_status=Booking.PaymentStatus.PAID),
+        ),
+    )
+    owner_commission_ledger = (
+        all_bookings.values(
+            'resource__facility__owner__username',
+            'resource__facility__owner__first_name',
+            'resource__facility__owner__last_name',
+            'resource__facility__name',
+        )
+        .annotate(
+            gross=Sum('total_price'),
+            commission_owed=Sum(
+                'platform_fee_amount',
+                filter=Q(
+                    payment_status=Booking.PaymentStatus.PAID,
+                    platform_fee_collected=False,
+                ),
+            ),
+        )
+        .order_by(
+            'resource__facility__owner__username',
+            'resource__facility__name',
+        )
     )
     return render(request, 'admin_dashboard.html', {
         'todays_bookings': todays_bookings,
         'active_closures': active_closures,
         'all_bookings': all_bookings,
+        'owner_commission_ledger': owner_commission_ledger,
         'financial_totals': {
             key: value or Decimal('0.00')
             for key, value in financial_totals.items()

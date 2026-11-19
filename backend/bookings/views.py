@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from facilities.availability import slot_unavailability_reason
-from facilities.models import BookableResource, FacilitySport, ResourceSport
+from facilities.models import BookableResource, Facility, FacilitySport, ResourceSport
 
 from .models import Booking
 from .serializers import (
@@ -78,6 +78,15 @@ class BookingCreateView(APIView):
         )
 
         with transaction.atomic():
+            try:
+                Facility.objects.select_for_update().get(
+                    pk=requested['resource'].facility_id,
+                    is_active=True,
+                )
+            except Facility.DoesNotExist as exc:
+                raise ValidationError({
+                    'resource_id': 'The requested facility is not currently bookable.'
+                }) from exc
             try:
                 resource = (
                     BookableResource.objects.select_for_update()
@@ -255,6 +264,12 @@ class BookingCancelView(APIView):
 
             booking.status = Booking.Status.CANCELLED
             booking.cancelled_at = timezone.now()
-            booking.save(update_fields=('status', 'cancelled_at', 'updated_at'))
+            booking.cancellation_reason = 'Cancelled by customer'
+            booking.save(update_fields=(
+                'status',
+                'cancelled_at',
+                'cancellation_reason',
+                'updated_at',
+            ))
 
         return Response(BookingSerializer(booking).data, status=status.HTTP_200_OK)

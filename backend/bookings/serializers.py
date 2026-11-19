@@ -16,6 +16,23 @@ class BookingSerializer(serializers.ModelSerializer):
     facility_name = serializers.CharField(source='resource.facility.name', read_only=True)
     resource_name = serializers.CharField(source='resource.name', read_only=True)
     sport_name = serializers.CharField(source='sport.name', read_only=True)
+    merchant_account_name = serializers.CharField(
+        source='resource.facility.wallet_account_name',
+        read_only=True,
+    )
+    merchant_gcash_number = serializers.CharField(
+        source='resource.facility.gcash_number',
+        read_only=True,
+    )
+    merchant_maya_number = serializers.CharField(
+        source='resource.facility.maya_number',
+        read_only=True,
+    )
+    merchant_qr_url = serializers.SerializerMethodField()
+
+    def get_merchant_qr_url(self, booking):
+        image = booking.resource.facility.payment_qr_image
+        return image.url if image else ''
 
     class Meta:
         model = Booking
@@ -27,6 +44,10 @@ class BookingSerializer(serializers.ModelSerializer):
             'resource_name',
             'sport_id',
             'sport_name',
+            'merchant_account_name',
+            'merchant_gcash_number',
+            'merchant_maya_number',
+            'merchant_qr_url',
             'start_datetime',
             'end_datetime',
             'participant_count',
@@ -42,10 +63,16 @@ class BookingSerializer(serializers.ModelSerializer):
             'payment_method',
             'payment_status',
             'payment_reference',
+            'payment_verified_at',
+            'payment_verified_by',
+            'platform_fee_collected',
+            'platform_fee_collected_at',
+            'platform_fee_collected_by',
             'currency',
             'created_at',
             'updated_at',
             'cancelled_at',
+            'cancellation_reason',
         )
         read_only_fields = fields
 

@@ -135,6 +135,58 @@ def test_resource_specific_schedule_overrides_general_schedule():
     ]
 
 
+def test_mid_hour_closure_marks_overlapping_hour_closed_and_next_hour_available():
+    request_data = build_request().model_dump(mode='json')
+    request_data['facilities'][0]['operating_hours'] = [{
+        'day_of_week': 0,
+        'start_time': '13:00:00',
+        'end_time': '19:00:00',
+    }]
+    request_data['schedules'][0]['start_time'] = '13:00:00'
+    request_data['schedules'][0]['end_time'] = '19:00:00'
+    request_data['closures'] = [{
+        'facility_id': 1,
+        'resource_id': 10,
+        'start_datetime': '2026-11-02T13:36:00+08:00',
+        'end_datetime': '2026-11-02T17:35:00+08:00',
+        'reason': 'Mid-hour maintenance',
+    }]
+    request_data['existing_bookings'] = []
+    request = AvailabilityRequest.model_validate(request_data).model_dump(mode='json')
+
+    slots = evaluate_facility_slots(
+        request['facilities'][0],
+        request['schedules'],
+        request['closures'],
+        request['existing_bookings'],
+        request['target_date'],
+        request['evaluated_at'],
+        include_unavailable=True,
+    )
+
+    assert [slot['availability'] for slot in slots] == [
+        'closed', 'closed', 'closed', 'closed', 'closed', 'available',
+    ]
+    assert slots[4]['reason'] == 'Mid-hour maintenance'
+
+
+def test_parallel_evaluator_includes_past_slots_as_unavailable():
+    request_data = build_request().model_dump(mode='json')
+    request_data['evaluated_at'] = '2026-11-02T09:15:00+08:00'
+    request = AvailabilityRequest.model_validate(request_data).model_dump(mode='json')
+    slots = evaluate_facility_slots(
+        request['facilities'][0],
+        request['schedules'],
+        request['closures'],
+        request['existing_bookings'],
+        request['target_date'],
+        request['evaluated_at'],
+        include_unavailable=True,
+    )
+
+    assert [slot['availability'] for slot in slots] == ['past', 'booked', 'available']
+
+
 def test_search_endpoint_returns_typed_parallel_response():
     assert any(
         route.path == '/availability/search' and 'POST' in route.methods

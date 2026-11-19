@@ -3,6 +3,11 @@
 {% block title %}Master Control Dashboard | CourtGrid{% endblock %}
 
 {% block content %}
+{% if messages %}
+    {% for message in messages %}
+        <div class="alert alert-{{ message.tags|default:'info' }}" role="status">{{ message }}</div>
+    {% endfor %}
+{% endif %}
 <header class="mb-4">
     <p class="text-uppercase text-body-secondary small mb-1">Administration</p>
     <h1 class="h2">Master Control Dashboard</h1>
@@ -14,12 +19,12 @@
 </header>
 
 <section class="finance-kpis" aria-label="Marketplace monetization summary">
-    <article class="finance-kpi"><span>Total Marketplace Volume (GMV)</span><strong>₱{{ financial_totals.gross|floatformat:2 }}</strong></article>
-    <article class="finance-kpi is-revenue"><span>Platform Commission Revenue (5%)</span><strong>₱{{ financial_totals.platform_fee|floatformat:2 }}</strong></article>
-    <article class="finance-kpi"><span>Partner Venue Payouts (95%)</span><strong>₱{{ financial_totals.owner_payout|floatformat:2 }}</strong></article>
+    <article class="finance-kpi"><span>Total Marketplace Bookings (GMV)</span><strong>₱{{ financial_totals.gross|floatformat:2 }}</strong></article>
+    <article class="finance-kpi is-revenue"><span>5% Platform Commission Collectible from Owners</span><strong>₱{{ financial_totals.platform_fee|floatformat:2 }}</strong></article>
+    <article class="finance-kpi"><span>Owner Direct Collections (95% Retained)</span><strong>₱{{ financial_totals.owner_payout|floatformat:2 }}</strong></article>
     <article class="finance-kpi"><span>Active Verified Venues &amp; Courts</span><strong>{{ active_verified_venues }} venues · {{ active_courts }} courts</strong></article>
 </section>
-<p class="sandbox-demo-notice mb-4">Sandbox estimates only — no customer payments have been collected and no partner payouts have been transferred by this demo.</p>
+<p class="sandbox-demo-notice mb-4">Venue-verified payments are customer-to-owner transfers. CourtGrid does not process customer funds; owners remit platform commissions manually.</p>
 
 <section class="card hover-lift mb-4" aria-labelledby="today-bookings-heading">
     <div class="card-body">
@@ -42,8 +47,8 @@
                             <td>{{ booking.resource.facility.name }}</td>
                             <td>{{ booking.resource.name }}</td>
                             <td>{{ booking.sport.name }}</td>
-                            <td>{{ booking.start_datetime|date:"H:i" }}</td>
-                            <td>{{ booking.end_datetime|date:"H:i" }}</td>
+                            <td>{{ booking.start_datetime|date:"g:i A" }}</td>
+                            <td>{{ booking.end_datetime|date:"g:i A" }}</td>
                             <td>{{ booking.user.get_username }}</td>
                         </tr>
                     {% empty %}
@@ -63,8 +68,8 @@
                 <thead>
                     <tr>
                         <th>Facility / Court</th><th>Sport</th><th>Date / Time</th><th>Booked By</th>
-                        <th>Contact</th><th>Participants</th><th>Player Roster</th><th>Gross Fee (estimate)</th>
-                        <th>5% Admin Commission (estimate)</th><th>95% Owner Payout (estimate)</th><th>Payment / Demo Reference</th>
+                        <th>Contact</th><th>Participants</th><th>Player Roster</th><th>Booking GMV</th>
+                        <th>5% Commission Owed</th><th>Commission Collection</th><th>Payment Status / Reference</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -72,18 +77,67 @@
                         <tr>
                             <td>{{ booking.resource.facility.name }} / {{ booking.resource.name }}</td>
                             <td>{{ booking.sport.name }}</td>
-                            <td>{{ booking.start_datetime|date:"M j, Y H:i" }}–{{ booking.end_datetime|date:"H:i" }}</td>
+                            <td>{{ booking.start_datetime|date:"M j, Y g:i A" }}–{{ booking.end_datetime|date:"g:i A" }}</td>
                             <td>{{ booking.user.get_username }}</td>
                             <td>{{ booking.contact_email }}<br>{{ booking.contact_phone }}</td>
                             <td>{{ booking.participant_count }}</td>
                             <td>{{ booking.participant_names|default:"—" }}</td>
                             <td>₱{{ booking.total_price }}</td>
                             <td>₱{{ booking.platform_fee_amount }}</td>
-                            <td>₱{{ booking.owner_payout_amount }}</td>
-                            <td><span class="payment-receipt-badge payment-pending-badge">{{ booking.get_payment_method_display }} · Pending (demo)</span><br>Reservation ref: {{ booking.payment_reference }}</td>
+                            <td>
+                                {% if booking.platform_fee_collected %}
+                                    <span class="payment-receipt-badge">Collected</span>
+                                {% elif booking.payment_status == 'paid' %}
+                                    <span class="payment-receipt-badge payment-pending-badge">Owed by owner</span>
+                                    <form method="post" class="mt-1">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="collect_commission">
+                                        <input type="hidden" name="booking_id" value="{{ booking.pk }}">
+                                        <button class="btn btn-sm btn-outline-primary" type="submit">Mark Collected</button>
+                                    </form>
+                                {% else %}
+                                    <span class="payment-receipt-badge">Not yet due</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="payment-receipt-badge {% if booking.payment_status == 'pending' %}payment-pending-badge{% endif %}">{{ booking.get_payment_method_display }} · {{ booking.get_payment_status_display }}</span>
+                                <br>Reservation ref: {{ booking.payment_reference }}
+                                {% if booking.payment_status == 'pending' %}
+                                    <form method="post" class="mt-1">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="verify_payment">
+                                        <input type="hidden" name="booking_id" value="{{ booking.pk }}">
+                                        <button class="btn btn-sm btn-outline-success" type="submit">Verify Venue Payment</button>
+                                    </form>
+                                {% endif %}
+                            </td>
                         </tr>
                     {% empty %}
                         <tr><td colspan="11" class="text-body-secondary">No confirmed bookings.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<section class="card hover-lift mb-4" aria-labelledby="owner-commission-ledger-heading">
+    <div class="card-body">
+        <h2 id="owner-commission-ledger-heading" class="h4">Owner Commission Collection Ledger</h2>
+        <p class="small text-body-secondary">Outstanding 5% platform fees are payable by venue owners; customer payments are made directly to each merchant.</p>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle">
+                <thead><tr><th>Owner</th><th>Facility</th><th>Booking GMV</th><th>Commission Owed</th></tr></thead>
+                <tbody>
+                    {% for row in owner_commission_ledger %}
+                        <tr>
+                            <td>{{ row.resource__facility__owner__first_name }} {{ row.resource__facility__owner__last_name }} ({{ row.resource__facility__owner__username }})</td>
+                            <td>{{ row.resource__facility__name }}</td>
+                            <td>₱{{ row.gross|floatformat:2 }}</td>
+                            <td>₱{{ row.commission_owed|floatformat:2 }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="4" class="text-body-secondary">No owner commissions are currently due.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -111,8 +165,8 @@
                             <td>{{ closure.facility.name }}</td>
                             <td>{{ closure.resource.name|default:"All resources" }}</td>
                             <td>{{ closure.reason }}</td>
-                            <td>{{ closure.start_datetime|date:"M j, Y H:i" }}</td>
-                            <td>{{ closure.end_datetime|date:"M j, Y H:i" }}</td>
+                            <td>{{ closure.start_datetime|date:"M j, Y g:i A" }}</td>
+                            <td>{{ closure.end_datetime|date:"M j, Y g:i A" }}</td>
                         </tr>
                     {% empty %}
                         <tr><td colspan="5" class="text-body-secondary">No active closures.</td></tr>

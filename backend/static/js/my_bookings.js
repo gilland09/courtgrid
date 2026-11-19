@@ -5,6 +5,9 @@ const cancelModal = new bootstrap.Modal(cancelModalElement);
 const cancelSummary = document.getElementById('cancel-booking-summary');
 const cancelResult = document.getElementById('cancel-booking-result');
 const confirmCancelButton = document.getElementById('confirm-cancel-booking');
+const receiptModalElement = document.getElementById('booking-receipt-modal');
+const receiptModal = new bootstrap.Modal(receiptModalElement);
+const receiptContent = document.getElementById('booking-receipt-content');
 
 let allBookings = [];
 let currentTab = 'upcoming';
@@ -25,7 +28,73 @@ function formatBookingDateTime(value) {
         timeZone: 'Asia/Manila',
         dateStyle: 'medium',
         timeStyle: 'short',
+        hour12: true,
     }).format(new Date(value));
+}
+
+function addReceiptRow(label, value) {
+    const row = document.createElement('div');
+    row.className = 'booking-summary-row';
+    const key = document.createElement('span');
+    key.textContent = label;
+    const content = document.createElement('strong');
+    content.textContent = value || '—';
+    row.append(key, content);
+    receiptContent.append(row);
+}
+
+function showReceipt(booking) {
+    receiptContent.replaceChildren();
+    const heading = document.createElement('h3');
+    heading.className = 'h5 mb-3';
+    heading.textContent = booking.payment_status === 'paid'
+        ? 'CourtGrid Verified Payment Receipt'
+        : 'CourtGrid Reservation Receipt · Payment Pending';
+    receiptContent.append(heading);
+    addReceiptRow('Reference number', booking.payment_reference);
+    addReceiptRow('Venue', booking.facility_name);
+    addReceiptRow('Merchant account', booking.merchant_account_name || booking.facility_name);
+    const merchantNumber = booking.payment_method === 'gcash'
+        ? booking.merchant_gcash_number
+        : booking.payment_method === 'maya'
+            ? booking.merchant_maya_number
+            : '';
+    if (merchantNumber) {
+        addReceiptRow('Merchant number', merchantNumber);
+    }
+    addReceiptRow('Court', booking.resource_name);
+    addReceiptRow('Sport', booking.sport_name);
+    addReceiptRow(
+        'Date and time',
+        `${formatBookingDateTime(booking.start_datetime)} – ${formatBookingDateTime(booking.end_datetime)}`,
+    );
+    addReceiptRow('Participant count', String(booking.participant_count));
+    addReceiptRow('Player roster', booking.participant_names || 'Names not provided');
+    addReceiptRow(
+        'Payment method',
+        ({
+            gcash: 'GCash',
+            maya: 'Maya',
+            card: 'Credit / Debit Card',
+            cash: 'Pay at Venue',
+        })[booking.payment_method] || booking.payment_method,
+    );
+    addReceiptRow(
+        'Payment status',
+        booking.payment_status === 'paid'
+            ? 'PAID · merchant verified'
+            : booking.payment_status === 'refunded'
+                ? 'REFUNDED'
+                : 'PENDING · not verified',
+    );
+    addReceiptRow('Total amount', `${booking.currency || 'PHP'} ${booking.total_price}`);
+    const notice = document.createElement('p');
+    notice.className = 'sandbox-demo-notice mb-0 mt-3';
+    notice.textContent = booking.payment_status === 'paid'
+        ? `Payment verification recorded${booking.payment_verified_at ? ` on ${formatBookingDateTime(booking.payment_verified_at)}` : ''}.`
+        : 'This is a reservation record, not proof of payment. The venue must verify any external wallet transfer.';
+    receiptContent.append(notice);
+    receiptModal.show();
 }
 
 function addBookingDetail(container, label, value) {
@@ -165,12 +234,22 @@ function renderBookings() {
             paymentBadge.classList.add('payment-pending-badge');
         }
         paymentBadge.textContent = booking.payment_status === 'pending'
-            ? 'Payment pending · demo only'
+            ? 'Payment pending · venue verification'
             : booking.payment_status === 'refunded'
                 ? 'Refunded'
                 : 'Paid';
         body.append(paymentBadge);
-        addBookingDetail(body, 'Demo reservation reference', booking.payment_reference || 'Pending');
+        addBookingDetail(body, 'Reservation reference', booking.payment_reference || 'Pending');
+        if (booking.cancellation_reason) {
+            addBookingDetail(body, 'Cancellation reason', booking.cancellation_reason);
+        }
+
+        const receiptButton = document.createElement('button');
+        receiptButton.type = 'button';
+        receiptButton.className = 'btn btn-outline-primary booking-receipt-button mt-2';
+        receiptButton.dataset.bookingId = booking.id;
+        receiptButton.textContent = 'View Receipt';
+        body.append(receiptButton);
 
         if (
             booking.status === 'CONFIRMED'
@@ -277,7 +356,11 @@ async function cancelBooking() {
         showCancelMessage('Your booking has been cancelled.', 'success');
         allBookings = allBookings.map((booking) => (
             booking.id === bookingToCancel.id
-                ? { ...booking, status: 'CANCELLED' }
+                ? {
+                    ...booking,
+                    status: 'CANCELLED',
+                    cancellation_reason: 'Cancelled by customer',
+                }
                 : booking
         ));
         renderBookings();
@@ -300,11 +383,25 @@ bookingTabs.addEventListener('click', (event) => {
 });
 
 bookingsContainer.addEventListener('click', (event) => {
+    const receiptButton = event.target.closest('.booking-receipt-button');
+    if (receiptButton) {
+        const booking = allBookings.find(
+            (item) => String(item.id) === receiptButton.dataset.bookingId,
+        );
+        if (booking) {
+            showReceipt(booking);
+        }
+        return;
+    }
     const button = event.target.closest('[data-booking-id]');
     const booking = allBookings.find((item) => item.id === Number(button?.dataset.bookingId));
     if (button && booking) {
         openCancelModal(booking);
     }
+});
+
+document.getElementById('print-saved-booking-receipt').addEventListener('click', () => {
+    window.print();
 });
 
 confirmCancelButton.addEventListener('click', cancelBooking);

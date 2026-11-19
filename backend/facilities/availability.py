@@ -87,6 +87,8 @@ def has_confirmed_booking(resource, start_datetime, end_datetime):
 def slot_unavailability_reason(resource, facility_sport, start_datetime, end_datetime):
     local_start = local_datetime(start_datetime)
     local_end = local_datetime(end_datetime)
+    if start_datetime <= timezone.now():
+        return 'The requested time has already passed.'
     if local_start.date() != local_end.date():
         return 'Bookings cannot cross midnight in the application timezone.'
     if not is_within_operating_hours(resource, start_datetime, end_datetime):
@@ -96,6 +98,23 @@ def slot_unavailability_reason(resource, facility_sport, start_datetime, end_dat
     if is_closed(resource, start_datetime, end_datetime):
         return 'The requested time overlaps a facility or resource closure.'
     return None
+
+
+def slot_status(resource, start_datetime, end_datetime, evaluated_at):
+    if start_datetime <= evaluated_at:
+        return 'past', ''
+    closure = FacilityClosure.objects.filter(
+        facility=resource.facility,
+        start_datetime__lt=end_datetime,
+        end_datetime__gt=start_datetime,
+    ).filter(
+        Q(resource__isnull=True) | Q(resource=resource),
+    ).order_by('start_datetime').first()
+    if closure is not None:
+        return 'closed', closure.reason
+    if has_confirmed_booking(resource, start_datetime, end_datetime):
+        return 'booked', ''
+    return 'available', ''
 
 
 def is_slot_available(resource, facility_sport, start_datetime, end_datetime):
@@ -141,6 +160,18 @@ def active_resources_for_offering(facility_sport):
 
 
 def evaluate_serial_availability(offerings, target_date: date, evaluated_at=None):
+    return [
+        {
+            key: value
+            for key, value in slot.items()
+            if key not in {'availability', 'reason'}
+        }
+        for slot in evaluate_serial_slots(offerings, target_date, evaluated_at)
+        if slot['availability'] == 'available'
+    ]
+
+
+def evaluate_serial_slots(offerings, target_date: date, evaluated_at=None):
     evaluated_at = evaluated_at or timezone.now()
     current_time = local_datetime(evaluated_at)
     results = []
@@ -148,19 +179,32 @@ def evaluate_serial_availability(offerings, target_date: date, evaluated_at=None
         for resource in active_resources_for_offering(facility_sport):
             for hour in range(24):
                 start_datetime, end_datetime = make_local_slot(target_date, hour)
-                if start_datetime <= current_time:
+                if end_datetime.date() != start_datetime.date():
                     continue
-                if is_slot_available(
+                if not is_within_operating_hours(
+                    resource,
+                    start_datetime,
+                    end_datetime,
+                ) or not is_within_sport_schedule(
                     resource,
                     facility_sport,
                     start_datetime,
                     end_datetime,
                 ):
-                    results.append({
-                        'facility_id': facility_sport.facility_id,
-                        'resource_id': resource.pk,
-                        'sport_id': facility_sport.sport_id,
-                        'start_datetime': start_datetime,
-                        'end_datetime': end_datetime,
-                    })
+                    continue
+                availability, reason = slot_status(
+                    resource,
+                    start_datetime,
+                    end_datetime,
+                    current_time,
+                )
+                results.append({
+                    'facility_id': facility_sport.facility_id,
+                    'resource_id': resource.pk,
+                    'sport_id': facility_sport.sport_id,
+                    'start_datetime': start_datetime,
+                    'end_datetime': end_datetime,
+                    'availability': availability,
+                    'reason': reason,
+                })
     return results

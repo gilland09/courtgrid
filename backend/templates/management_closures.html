@@ -38,8 +38,8 @@
                         <tr>
                             <td>{{ closure.facility.name }}</td>
                             <td>{{ closure.resource.name|default:"All courts" }}</td>
-                            <td>{{ closure.start_datetime|date:"M j, Y H:i" }}</td>
-                            <td>{{ closure.end_datetime|date:"M j, Y H:i" }}</td>
+                            <td>{{ closure.start_datetime|date:"M j, Y g:i A" }}</td>
+                            <td>{{ closure.end_datetime|date:"M j, Y g:i A" }}</td>
                             <td>{{ closure.reason }}</td>
                             <td>
                                 <form method="post">
