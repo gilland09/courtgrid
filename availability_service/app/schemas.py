@@ -1,7 +1,11 @@
 from datetime import date, datetime, time
 from typing import Literal
+from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+APPLICATION_TIMEZONE = ZoneInfo('Asia/Manila')
 
 
 class BoundaryModel(BaseModel):
@@ -10,7 +14,7 @@ class BoundaryModel(BaseModel):
 
 class ResourceData(BoundaryModel):
     resource_id: int
-    facility_sport_ids: list[int] = Field(default_factory=list)
+    facility_sport_ids: list[int] = Field(default_factory=list, max_length=50)
 
 
 class OperatingHoursData(BoundaryModel):
@@ -23,8 +27,11 @@ class OperatingHoursData(BoundaryModel):
 
 class FacilityData(BoundaryModel):
     facility_id: int
-    resources: list[ResourceData] = Field(default_factory=list)
-    operating_hours: list[OperatingHoursData] = Field(default_factory=list)
+    resources: list[ResourceData] = Field(default_factory=list, max_length=50)
+    operating_hours: list[OperatingHoursData] = Field(
+        default_factory=list,
+        max_length=100,
+    )
 
 
 class ScheduleData(BoundaryModel):
@@ -70,10 +77,13 @@ class BookingIntervalData(BoundaryModel):
 class AvailabilityRequest(BoundaryModel):
     target_date: date
     evaluated_at: datetime
-    facilities: list[FacilityData]
-    closures: list[ClosureData] = Field(default_factory=list)
-    schedules: list[ScheduleData] = Field(default_factory=list)
-    existing_bookings: list[BookingIntervalData] = Field(default_factory=list)
+    facilities: list[FacilityData] = Field(max_length=50)
+    closures: list[ClosureData] = Field(default_factory=list, max_length=1200)
+    schedules: list[ScheduleData] = Field(default_factory=list, max_length=1000)
+    existing_bookings: list[BookingIntervalData] = Field(
+        default_factory=list,
+        max_length=1200,
+    )
 
     @field_validator('evaluated_at')
     @classmethod
@@ -81,6 +91,15 @@ class AvailabilityRequest(BoundaryModel):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError('evaluated_at must include a timezone offset.')
         return value
+
+    @model_validator(mode='after')
+    def bound_evaluation_work(self):
+        evaluation_date = self.evaluated_at.astimezone(APPLICATION_TIMEZONE).date()
+        if abs((self.target_date - evaluation_date).days) > 31:
+            raise ValueError('target_date must be within 31 days of evaluated_at.')
+        if sum(len(facility.resources) for facility in self.facilities) > 50:
+            raise ValueError('A request may include at most 50 courts.')
+        return self
 
 
 class AvailableSlot(BoundaryModel):

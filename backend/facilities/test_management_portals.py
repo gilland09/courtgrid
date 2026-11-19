@@ -1,6 +1,8 @@
 from datetime import time, timedelta
 from decimal import Decimal
+import struct
 from tempfile import TemporaryDirectory
+import zlib
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -19,6 +21,23 @@ from .models import (
     ResourceSport,
     Sport,
 )
+
+
+def _png_image():
+    def chunk(name, data):
+        body = name + data
+        return (
+            struct.pack('>I', len(data))
+            + body
+            + struct.pack('>I', zlib.crc32(body) & 0xFFFFFFFF)
+        )
+
+    return (
+        b'\x89PNG\r\n\x1a\n'
+        + chunk(b'IHDR', struct.pack('>IIBBBBB', 1, 1, 8, 6, 0, 0, 0))
+        + chunk(b'IDAT', zlib.compress(b'\x00\x00\x00\x00\x00'))
+        + chunk(b'IEND', b'')
+    )
 
 
 class InAppManagementPortalTests(TestCase):
@@ -348,7 +367,7 @@ class InAppManagementPortalTests(TestCase):
         self.assertEqual(self.other_facility.maya_number, '')
 
     def test_owner_can_upload_a_provider_issued_merchant_qr_image(self):
-        image_bytes = b'\x89PNG\r\n\x1a\n' + (b'\x00' * 32)
+        image_bytes = _png_image()
         with TemporaryDirectory() as media_root:
             with override_settings(MEDIA_ROOT=media_root):
                 self.client.force_login(self.owner)

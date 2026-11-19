@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 import requests
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from bookings.models import Booking
@@ -26,6 +26,7 @@ from .models import (
 )
 
 
+@override_settings(COMPUTE_SERVICE_TOKEN='test-compute-token')
 class AvailabilityHTTPClientTests(TestCase):
     def setUp(self):
         self.facility = Facility.objects.create(
@@ -138,7 +139,11 @@ class AvailabilityHTTPClientTests(TestCase):
         args, kwargs = post.call_args
         self.assertEqual(args[0], 'http://127.0.0.1:8001/availability/search')
         self.assertEqual(kwargs['json']['target_date'], self.target_date.isoformat())
-        self.assertEqual(kwargs['timeout'], (3.05, 20))
+        self.assertEqual(
+            kwargs['headers']['X-Compute-Service-Token'],
+            'test-compute-token',
+        )
+        self.assertEqual(kwargs['timeout'], 3.0)
 
     @patch(
         'facilities.availability_client.requests.post',

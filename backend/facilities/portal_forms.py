@@ -1,3 +1,7 @@
+from pathlib import PurePath
+import struct
+import zlib
+
 from django import forms
 from django.db.models import Q
 
@@ -201,17 +205,124 @@ class FacilityPayoutWalletForm(forms.ModelForm):
         uploaded = self.cleaned_data.get('payment_qr_image')
         if not uploaded or not hasattr(uploaded, 'read'):
             return uploaded
-        signature = uploaded.read(12)
+        if uploaded.size > 5 * 1024 * 1024:
+            raise forms.ValidationError('The QR image must be 5 MB or smaller.')
+
+        extension = PurePath(uploaded.name).suffix.lower()
+        allowed_types = {
+            '.png': ('image/png', self._valid_png),
+            '.jpg': ('image/jpeg', self._valid_jpeg),
+            '.jpeg': ('image/jpeg', self._valid_jpeg),
+            '.webp': ('image/webp', self._valid_webp),
+        }
+        allowed = allowed_types.get(extension)
+        if allowed is None or uploaded.content_type != allowed[0]:
+            raise forms.ValidationError(
+                'Upload a PNG, JPEG, or WebP QR image with a matching file type.'
+            )
+        content = uploaded.read(5 * 1024 * 1024 + 1)
         uploaded.seek(0)
-        valid_signatures = (
-            signature.startswith(b'\x89PNG\r\n\x1a\n'),
-            signature.startswith(b'\xff\xd8\xff'),
-            signature.startswith((b'GIF87a', b'GIF89a')),
-            signature[:4] == b'RIFF' and signature[8:12] == b'WEBP',
-        )
-        if not any(valid_signatures):
-            raise forms.ValidationError('Upload a PNG, JPEG, GIF, or WebP QR image.')
+        if len(content) > 5 * 1024 * 1024 or not allowed[1](content):
+            raise forms.ValidationError('The uploaded file is not a valid supported QR image.')
         return uploaded
+
+    @staticmethod
+    def _valid_png(content):
+        if not content.startswith(b'\x89PNG\r\n\x1a\n'):
+            return False
+        offset = 8
+        saw_header = False
+        while offset + 12 <= len(content):
+            chunk_length = struct.unpack_from('>I', content, offset)[0]
+            chunk_end = offset + 12 + chunk_length
+            if chunk_end > len(content):
+                return False
+            chunk_type = content[offset + 4:offset + 8]
+            chunk_data = content[offset + 8:offset + 8 + chunk_length]
+            expected_crc = struct.unpack_from('>I', content, offset + 8 + chunk_length)[0]
+            if zlib.crc32(chunk_type + chunk_data) & 0xFFFFFFFF != expected_crc:
+                return False
+            if not saw_header:
+                if chunk_type != b'IHDR' or chunk_length != 13:
+                    return False
+                width, height = struct.unpack_from('>II', chunk_data)
+                if width < 1 or height < 1 or width * height > 16_000_000:
+                    return False
+                saw_header = True
+            if chunk_type == b'IEND':
+                return saw_header and chunk_length == 0 and chunk_end == len(content)
+            offset = chunk_end
+        return False
+
+    @staticmethod
+    def _valid_jpeg(content):
+        if (
+            len(content) < 4
+            or not content.startswith(b'\xff\xd8')
+            or not content.endswith(b'\xff\xd9')
+        ):
+            return False
+        offset = 2
+        found_dimensions = False
+        while offset < len(content) - 2:
+            if content[offset] != 0xFF:
+                return False
+            while offset < len(content) and content[offset] == 0xFF:
+                offset += 1
+            if offset >= len(content):
+                return False
+            marker = content[offset]
+            offset += 1
+            if marker == 0xDA:
+                if offset + 2 > len(content):
+                    return False
+                segment_length = struct.unpack_from('>H', content, offset)[0]
+                return (
+                    found_dimensions
+                    and segment_length >= 6
+                    and offset + segment_length < len(content) - 2
+                )
+            if marker in {0xD8, 0xD9, 0x01, *range(0xD0, 0xD8)}:
+                continue
+            if offset + 2 > len(content):
+                return False
+            segment_length = struct.unpack_from('>H', content, offset)[0]
+            segment_end = offset + segment_length
+            if segment_length < 2 or segment_end > len(content):
+                return False
+            if marker in {
+                0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
+                0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF,
+            }:
+                if segment_length < 8:
+                    return False
+                height, width = struct.unpack_from('>HH', content, offset + 3)
+                if width < 1 or height < 1 or width * height > 16_000_000:
+                    return False
+                found_dimensions = True
+            offset = segment_end
+        return False
+
+    @staticmethod
+    def _valid_webp(content):
+        if (
+            len(content) < 20
+            or content[:4] != b'RIFF'
+            or content[8:12] != b'WEBP'
+            or struct.unpack_from('<I', content, 4)[0] + 8 != len(content)
+        ):
+            return False
+        offset = 12
+        has_image_chunk = False
+        while offset + 8 <= len(content):
+            chunk_type = content[offset:offset + 4]
+            chunk_length = struct.unpack_from('<I', content, offset + 4)[0]
+            chunk_end = offset + 8 + chunk_length + (chunk_length % 2)
+            if chunk_end > len(content):
+                return False
+            has_image_chunk |= chunk_type in {b'VP8 ', b'VP8L', b'VP8X'}
+            offset = chunk_end
+        return has_image_chunk and offset == len(content)
 
 
 class FacilityOperatingHoursForm(forms.ModelForm):

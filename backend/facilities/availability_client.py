@@ -129,11 +129,18 @@ def fetch_parallel_availability(
         existing_bookings=existing_bookings,
     )
     base_url = getattr(settings, 'FASTAPI_URL', 'http://127.0.0.1:8001').rstrip('/')
+    service_token = getattr(settings, 'COMPUTE_SERVICE_TOKEN', '')
     try:
+        headers = (
+            {'X-Compute-Service-Token': service_token}
+            if service_token
+            else {}
+        )
         response = requests.post(
             f'{base_url}/availability/search',
             json=payload,
-            timeout=(3.05, 20),
+            headers=headers,
+            timeout=3.0,
         )
         response.raise_for_status()
         result = response.json()

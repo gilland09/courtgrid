@@ -208,6 +208,8 @@ class AvailabilitySearchView(APIView):
         serializer = AvailabilitySearchSerializer(data=request.query_params)
         serializer.is_valid(raise_exception=True)
         search_date = serializer.validated_data['date']
+        if abs((search_date - timezone.localdate()).days) > 31:
+            raise ValidationError({'date': 'Availability can only be searched within 31 days.'})
         facility_id = serializer.validated_data.get('facility')
         sport_filter = None
 
@@ -225,6 +227,15 @@ class AvailabilitySearchView(APIView):
             facility_id=facility_id,
             sport=sport_filter,
         )
+        if offerings.values_list('resources__pk', flat=True).distinct().count() > 50:
+            raise ValidationError({
+                'detail': 'Availability requests are limited to 50 courts.',
+            })
+        facility_ids = offerings.values_list('facility_id', flat=True).distinct()
+        if facility_ids.count() > 50:
+            raise ValidationError({
+                'detail': 'Availability requests are limited to 50 facilities.',
+            })
         if serializer.validated_data['mode'] == 'serial':
             results = evaluate_serial_availability(offerings, search_date)
             slots = evaluate_serial_slots(offerings, search_date)
@@ -235,46 +246,64 @@ class AvailabilitySearchView(APIView):
                 'slots': slots,
             })
 
-        facility_ids = offerings.values_list('facility_id', flat=True).distinct()
         facilities = list(Facility.objects.filter(
             pk__in=facility_ids,
             is_active=True,
         ).order_by('pk'))
         facility_sport_ids = offerings.values_list('pk', flat=True)
-        schedules = list(
-            SportSchedule.objects.filter(
-                facility_sport_id__in=facility_sport_ids,
-                day_of_week=search_date.weekday(),
-            ).filter(
-                Q(effective_from__isnull=True) | Q(effective_from__lte=search_date),
-                Q(effective_until__isnull=True) | Q(effective_until__gte=search_date),
-            ).select_related('facility_sport')
-        )
+        schedule_queryset = SportSchedule.objects.filter(
+            facility_sport_id__in=facility_sport_ids,
+            day_of_week=search_date.weekday(),
+        ).filter(
+            Q(effective_from__isnull=True) | Q(effective_from__lte=search_date),
+            Q(effective_until__isnull=True) | Q(effective_until__gte=search_date),
+        ).select_related('facility_sport').order_by('pk')
+        if schedule_queryset.count() > 1000:
+            raise ValidationError({
+                'detail': 'Availability requests are limited to 1,000 schedules.',
+            })
+        if (
+            FacilityOperatingHours.objects.filter(facility_id__in=facility_ids)
+            .values('facility_id')
+            .annotate(total=Count('pk'))
+            .filter(total__gt=100)
+            .exists()
+        ):
+            raise ValidationError({
+                'detail': 'A facility may have at most 100 operating-hour records.',
+            })
+        schedules = list(schedule_queryset)
         day_start = timezone.make_aware(
             datetime.combine(search_date, time.min),
             APPLICATION_TIMEZONE,
         )
         day_end = day_start + timedelta(days=1)
-        closures = list(
-            FacilityClosure.objects.filter(
-                facility_id__in=facility_ids,
-                start_datetime__lt=day_end,
-                end_datetime__gt=day_start,
-            ).select_related('facility', 'resource')
-        )
+        closure_queryset = FacilityClosure.objects.filter(
+            facility_id__in=facility_ids,
+            start_datetime__lt=day_end,
+            end_datetime__gt=day_start,
+        ).select_related('facility', 'resource').order_by('pk')
+        if closure_queryset.count() > 1200:
+            raise ValidationError({
+                'detail': 'Availability requests are limited to 1,200 closures.',
+            })
+        closures = list(closure_queryset)
         resource_ids = BookableResource.objects.filter(
             facility_id__in=facility_ids,
             is_active=True,
             resource_sports__facility_sport_id__in=facility_sport_ids,
         ).values_list('pk', flat=True).distinct()
-        existing_bookings = list(
-            Booking.objects.filter(
-                resource_id__in=resource_ids,
-                status=Booking.Status.CONFIRMED,
-                start_datetime__lt=day_end,
-                end_datetime__gt=day_start,
-            ).select_related('resource')
-        )
+        booking_queryset = Booking.objects.filter(
+            resource_id__in=resource_ids,
+            status=Booking.Status.CONFIRMED,
+            start_datetime__lt=day_end,
+            end_datetime__gt=day_start,
+        ).select_related('resource').order_by('pk')
+        if booking_queryset.count() > 1200:
+            raise ValidationError({
+                'detail': 'Availability requests are limited to 1,200 bookings.',
+            })
+        existing_bookings = list(booking_queryset)
         try:
             service_response = fetch_parallel_availability(
                 target_date=search_date,
