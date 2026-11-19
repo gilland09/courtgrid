@@ -12,6 +12,3 @@ requests==2.34.2
 python-dotenv==1.2.4
 whitenoise>=6.6.0
 uvicorn[standard]==0.54.0
-
-# Lock-generation tool; pinned so the generated lock can be reproduced.
-pip-tools==7.6.2
