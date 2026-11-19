@@ -155,6 +155,7 @@ class InAppManagementPortalTests(TestCase):
                 'wallet_account_name': 'Owner Demo Account',
                 'gcash_number': '0917-000-0001',
                 'maya_number': '0918-000-0001',
+                'accepts_card': 'on',
                 'payout_qr_label': 'Demo QR label',
             },
         )
@@ -164,6 +165,7 @@ class InAppManagementPortalTests(TestCase):
         self.assertEqual(self.facility.wallet_account_name, 'Owner Demo Account')
         self.assertEqual(self.facility.gcash_number, '0917-000-0001')
         self.assertEqual(self.facility.maya_number, '0918-000-0001')
+        self.assertTrue(self.facility.accepts_card)
         self.assertEqual(self.facility.payout_qr_label, 'Demo QR label')
 
     def test_owner_cannot_update_another_owners_payout_destination(self):
@@ -357,10 +359,19 @@ class InAppManagementPortalTests(TestCase):
         self.assertEqual(dashboard.status_code, 200)
         self.assertEqual(dashboard.context['financial_totals']['platform_fee'], Decimal('10.00'))
         self.assertContains(dashboard, 'Owner Commission Collection Ledger')
+        pending_dashboard = self.client.get(
+            reverse('admin_dashboard'),
+            {'settlement_status': 'pending'},
+        )
+        self.assertEqual(list(pending_dashboard.context['all_bookings']), [booking])
+        paid_dashboard = self.client.get(
+            reverse('admin_dashboard'),
+            {'settlement_status': 'paid'},
+        )
+        self.assertEqual(list(paid_dashboard.context['all_bookings']), [])
 
         response = self.client.post(
-            reverse('admin_dashboard'),
-            {'action': 'collect_commission', 'booking_id': booking.pk},
+            reverse('settle_commission', kwargs={'booking_id': booking.pk}),
         )
 
         self.assertRedirects(response, reverse('admin_dashboard'))
@@ -368,6 +379,22 @@ class InAppManagementPortalTests(TestCase):
         self.assertTrue(booking.platform_fee_collected)
         self.assertEqual(booking.platform_fee_collected_by, self.admin)
         self.assertIsNotNone(booking.platform_fee_collected_at)
+        settled_dashboard = self.client.get(
+            reverse('admin_dashboard'),
+            {'settlement_status': 'paid'},
+        )
+        self.assertEqual(list(settled_dashboard.context['all_bookings']), [booking])
+        self.assertEqual(
+            settled_dashboard.context['financial_totals']['platform_fee'],
+            Decimal('0.00'),
+        )
+        self.client.force_login(self.owner)
+        owner_dashboard = self.client.get(reverse('owner_dashboard'))
+        self.assertEqual(
+            owner_dashboard.context['financial_totals']['platform_fee_settled'],
+            Decimal('10.00'),
+        )
+        self.assertContains(owner_dashboard, 'Commission Settled · Paid to Admin')
 
     def test_owner_cannot_edit_another_owners_facility(self):
         self.client.force_login(self.owner)

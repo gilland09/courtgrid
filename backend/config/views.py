@@ -137,6 +137,17 @@ def admin_dashboard_view(request):
         .select_related('user', 'resource__facility', 'sport')
         .order_by('start_datetime')
     )
+    settlement_status = request.GET.get('settlement_status', 'all')
+    if settlement_status == 'pending':
+        visible_bookings = all_bookings.filter(
+            payment_status=Booking.PaymentStatus.PAID,
+            platform_fee_collected=False,
+        )
+    elif settlement_status == 'paid':
+        visible_bookings = all_bookings.filter(platform_fee_collected=True)
+    else:
+        settlement_status = 'all'
+        visible_bookings = all_bookings
     financial_totals = all_bookings.aggregate(
         gross=Sum('total_price'),
         platform_fee=Sum(
@@ -144,6 +155,13 @@ def admin_dashboard_view(request):
             filter=Q(
                 payment_status=Booking.PaymentStatus.PAID,
                 platform_fee_collected=False,
+            ),
+        ),
+        platform_fee_settled=Sum(
+            'platform_fee_amount',
+            filter=Q(
+                payment_status=Booking.PaymentStatus.PAID,
+                platform_fee_collected=True,
             ),
         ),
         owner_payout=Sum(
@@ -176,7 +194,8 @@ def admin_dashboard_view(request):
     return render(request, 'admin_dashboard.html', {
         'todays_bookings': todays_bookings,
         'active_closures': active_closures,
-        'all_bookings': all_bookings,
+        'all_bookings': visible_bookings,
+        'settlement_status': settlement_status,
         'owner_commission_ledger': owner_commission_ledger,
         'financial_totals': {
             key: value or Decimal('0.00')
@@ -192,6 +211,39 @@ def admin_dashboard_view(request):
             facility__is_verified=True,
         ).count(),
     })
+
+
+@user_passes_test(
+    lambda user: get_user_role(user) == UserProfile.Role.ADMIN,
+    login_url='login',
+)
+@require_POST
+def settle_commission_view(request, booking_id):
+    with transaction.atomic():
+        booking = get_object_or_404(
+            Booking.objects.select_for_update().filter(
+                status=Booking.Status.CONFIRMED,
+                payment_status=Booking.PaymentStatus.PAID,
+            ),
+            pk=booking_id,
+        )
+        if booking.platform_fee_collected:
+            messages.info(request, 'This commission has already been marked paid to the platform.')
+        else:
+            booking.platform_fee_collected = True
+            booking.platform_fee_collected_at = timezone.now()
+            booking.platform_fee_collected_by = request.user
+            booking.save(update_fields=(
+                'platform_fee_collected',
+                'platform_fee_collected_at',
+                'platform_fee_collected_by',
+                'updated_at',
+            ))
+            messages.success(
+                request,
+                f'Commission of ₱{booking.platform_fee_amount} marked paid by {booking.resource.facility.owner or "the venue owner"}.',
+            )
+    return redirect('admin_dashboard')
 
 
 @login_required(login_url='login')

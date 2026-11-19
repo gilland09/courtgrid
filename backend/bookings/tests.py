@@ -176,6 +176,29 @@ class BookingAPITests(TransactionTestCase):
         self.assertEqual(response.data['platform_fee_amount'], '12.50')
         self.assertEqual(response.data['owner_payout_amount'], '237.50')
 
+    def test_unconfigured_payment_methods_are_rejected(self):
+        self.facility.gcash_number = ''
+        self.facility.maya_number = ''
+        self.facility.save(update_fields=('gcash_number', 'maya_number'))
+
+        response = self.create_booking(payment_method='gcash')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('payment_method', response.data)
+        self.assertEqual(Booking.objects.count(), 0)
+
+    def test_card_booking_requires_owner_card_configuration(self):
+        response = self.create_booking(payment_method='card')
+        self.assertEqual(response.status_code, 400)
+
+        self.facility.accepts_card = True
+        self.facility.save(update_fields=('accepts_card',))
+        response = self.create_booking(payment_method='card')
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['payment_method'], 'card')
+        self.assertEqual(response.data['payment_status'], 'pending')
+
     def test_batch_booking_records_selected_payment_method(self):
         response = self.client.post(
             '/api/bookings/',

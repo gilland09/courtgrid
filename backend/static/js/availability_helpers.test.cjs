@@ -9,6 +9,7 @@ const {
     getSevenDayDates,
     getSlotKey,
     formatSlotTime,
+    getAvailablePaymentMethods,
     isValidEmail,
     isValidPhone,
     resizePlayerNames,
@@ -38,6 +39,15 @@ test('slot times use 12-hour AM/PM formatting in Manila time', () => {
     assert.equal(formatSlotTime('2026-11-18T08:00:00+08:00'), '8:00 AM');
     assert.equal(formatSlotTime('2026-11-18T13:36:00+08:00'), '1:36 PM');
     assert.equal(formatSlotTime('2026-11-18T21:00:00+08:00'), '9:00 PM');
+});
+
+test('payment methods include configured options and always retain venue cash', () => {
+    assert.deepEqual(getAvailablePaymentMethods('gcash'), ['gcash', 'cash']);
+    assert.deepEqual(
+        getAvailablePaymentMethods('maya,card,unknown'),
+        ['maya', 'card', 'cash'],
+    );
+    assert.deepEqual(getAvailablePaymentMethods(''), ['cash']);
 });
 
 test('selected slots total their per-slot hourly rates', () => {

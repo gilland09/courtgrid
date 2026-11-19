@@ -594,6 +594,10 @@ form textarea:focus {
     background: #f7f9f7;
 }
 
+.payment-method-option[hidden] {
+    display: none !important;
+}
+
 .owner-merchant-payment[hidden] {
     display: none;
 }
@@ -606,6 +610,55 @@ form textarea:focus {
     object-fit: contain;
     border: 1px solid #e1e6e2;
     border-radius: 10px;
+    background: #fff;
+}
+
+.merchant-qr-open {
+    display: block;
+    padding: 0;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    cursor: zoom-in;
+}
+
+.merchant-qr-open[hidden],
+#owner-merchant-qr-view[hidden] {
+    display: none;
+}
+
+.merchant-qr-open:hover .owner-merchant-qr,
+.merchant-qr-open:focus-visible .owner-merchant-qr {
+    transform: scale(1.03);
+}
+
+.owner-merchant-qr {
+    transition: transform 0.18s ease;
+}
+
+.merchant-qr-view-icon {
+    width: 1em;
+    height: 1em;
+    margin-right: 0.2rem;
+    fill: currentColor;
+    vertical-align: -0.125em;
+}
+
+.merchant-qr-lightbox-panel {
+    align-items: center;
+    padding: 0.5rem;
+    border-radius: 12px;
+    background: #fff;
+}
+
+.merchant-qr-lightbox-image {
+    width: 320px;
+    height: 320px;
+    max-width: calc(100vw - 4rem);
+    max-height: calc(100vw - 4rem);
+    object-fit: contain;
+    padding: 16px;
+    border-radius: 12px;
     background: #fff;
 }
 

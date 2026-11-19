@@ -99,7 +99,6 @@ class CreateBookingSerializer(serializers.Serializer):
     payment_method = serializers.ChoiceField(
         choices=Booking.PaymentMethod.choices,
         required=False,
-        default=Booking.PaymentMethod.GCASH,
     )
 
     def validate(self, attrs):
@@ -188,7 +187,6 @@ class BatchCreateBookingSerializer(serializers.Serializer):
     payment_method = serializers.ChoiceField(
         choices=Booking.PaymentMethod.choices,
         required=False,
-        default=Booking.PaymentMethod.GCASH,
     )
     participant_names = serializers.CharField(
         required=False,

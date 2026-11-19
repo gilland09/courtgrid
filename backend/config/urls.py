@@ -33,6 +33,7 @@ from .views import (
     logout_view,
     my_bookings_view,
     register_view,
+    settle_commission_view,
 )
 
 urlpatterns = [
@@ -47,6 +48,11 @@ urlpatterns = [
         name='facility-detail-page',
     ),
     path('admin-dashboard/', admin_dashboard_view, name='admin_dashboard'),
+    path(
+        'admin-dashboard/commissions/<int:booking_id>/settle/',
+        settle_commission_view,
+        name='settle_commission',
+    ),
     path('owner/dashboard/', owner_dashboard_view, name='owner_dashboard'),
     path('management/facilities/', management_facilities_view, name='management_facilities'),
     path('management/closures/', management_closures_view, name='management_closures'),

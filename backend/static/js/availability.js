@@ -25,7 +25,11 @@ const gatewayBackButton = document.getElementById('gateway-back');
 const ownerMerchantPayment = document.getElementById('owner-merchant-payment');
 const ownerMerchantInstructions = document.getElementById('owner-merchant-instructions');
 const ownerMerchantQr = document.getElementById('owner-merchant-qr');
+const ownerMerchantQrOpen = document.getElementById('owner-merchant-qr-open');
+const ownerMerchantQrView = document.getElementById('owner-merchant-qr-view');
 const ownerMerchantNoQr = document.getElementById('owner-merchant-no-qr');
+const merchantQrLightbox = new bootstrap.Modal(document.getElementById('merchant-qr-lightbox'));
+const merchantQrLightboxImage = document.getElementById('merchant-qr-lightbox-image');
 const rentalBreakdownLabel = document.getElementById('rental-breakdown-label');
 const rentalBreakdownAmount = document.getElementById('rental-breakdown-amount');
 const platformFeeBreakdown = document.getElementById('platform-fee-breakdown');
@@ -41,6 +45,11 @@ const facilityResources = JSON.parse(document.getElementById('facility-resources
 const sportRates = JSON.parse(document.getElementById('sport-rates-data').textContent);
 const baseToday = availabilityDate.value || getManilaToday();
 const availabilityHelpers = window.CourtGridAvailabilityHelpers;
+const availablePaymentMethods = new Set(
+    availabilityHelpers.getAvailablePaymentMethods(
+        facilityDetail.dataset.paymentMethods || 'cash',
+    ),
+);
 
 let selectedSlots = [];
 let slotButtons = new Map();
@@ -50,7 +59,7 @@ let availabilityRequest = 0;
 const paymentMethodLabels = {
     gcash: 'GCash · external transfer, venue verification pending',
     maya: 'Maya · external transfer, venue verification pending',
-    card: 'Card · no card processor connected',
+    card: 'Card · arranged directly with the venue',
     cash: 'Pay at Venue',
 };
 
@@ -174,6 +183,26 @@ function updateCheckoutButton() {
             : `Continue to Merchant Payment (${formatCurrency(selectedTotal())})`;
 }
 
+function configurePaymentMethods() {
+    let hasSelectedAvailableMethod = false;
+    paymentMethodOptions.forEach((option) => {
+        const isAvailable = availablePaymentMethods.has(option.value);
+        option.closest('.payment-method-option').hidden = !isAvailable;
+        option.disabled = !isAvailable;
+        if (option.checked && isAvailable) {
+            hasSelectedAvailableMethod = true;
+        }
+    });
+    if (!hasSelectedAvailableMethod) {
+        const firstAvailable = [...paymentMethodOptions].find(
+            (option) => availablePaymentMethods.has(option.value),
+        );
+        if (firstAvailable) {
+            firstAvailable.checked = true;
+        }
+    }
+}
+
 function openPaymentInstructions() {
     const method = selectedPaymentMethod();
     const isWalletPayment = method === 'gcash' || method === 'maya';
@@ -202,12 +231,15 @@ function openPaymentInstructions() {
             + 'Transfers are external; the venue must verify the payment.'
         );
         const qrUrl = facilityDetail.dataset.merchantQr;
-        ownerMerchantQr.hidden = !qrUrl;
+        ownerMerchantQrOpen.hidden = !qrUrl;
+        ownerMerchantQrView.hidden = !qrUrl;
         ownerMerchantNoQr.hidden = Boolean(qrUrl);
         if (qrUrl) {
             ownerMerchantQr.src = qrUrl;
+            merchantQrLightboxImage.src = qrUrl;
         } else {
             ownerMerchantQr.removeAttribute('src');
+            merchantQrLightboxImage.removeAttribute('src');
         }
     }
     gatewayProcessingStatus.textContent = isWalletPayment
@@ -803,6 +835,11 @@ gatewayBackButton.addEventListener('click', () => {
     paymentGateway.hidden = true;
     bookingFields.hidden = false;
 });
+const openMerchantQrLightbox = () => {
+    merchantQrLightbox.show();
+};
+ownerMerchantQrOpen.addEventListener('click', openMerchantQrLightbox);
+ownerMerchantQrView.addEventListener('click', openMerchantQrLightbox);
 
 bookingModalElement.addEventListener('show.bs.modal', () => {
     selectedSlotBar.hidden = true;
@@ -825,6 +862,8 @@ document.getElementById('print-booking-receipt').addEventListener('click', () =>
 });
 
 renderQuickDates();
+configurePaymentMethods();
+updateCheckoutButton();
 updateActiveDatePill();
 updatePlayerNameInputs();
 searchAvailability();

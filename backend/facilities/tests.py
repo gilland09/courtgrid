@@ -63,9 +63,28 @@ class FacilityDetailPageTests(APITestCase):
         self.assertContains(response, 'name="contact_phone"')
         self.assertContains(response, 'id="player-names-grid"')
         self.assertContains(response, 'id="facility-resources-data"')
+        self.assertContains(response, 'id="merchant-qr-lightbox"')
+        self.assertContains(response, 'Click to View HD QR')
+        self.assertEqual(response.context['available_payment_methods'], ['cash'])
+        self.assertContains(response, 'data-payment-methods="cash"')
         self.assertContains(response, 'Basketball')
         self.assertContains(response, 'name="csrfmiddlewaretoken"')
         self.assertContains(response, 'js/availability.js')
+
+    def test_facility_detail_exposes_only_configured_payment_methods(self):
+        self.facility.gcash_number = '09171234567'
+        self.facility.accepts_card = True
+        self.facility.save(update_fields=('gcash_number', 'accepts_card'))
+
+        response = self.client.get(
+            reverse('facility-detail-page', kwargs={'pk': self.facility.pk}),
+        )
+
+        self.assertEqual(
+            response.context['available_payment_methods'],
+            ['gcash', 'card', 'cash'],
+        )
+        self.assertContains(response, 'data-payment-methods="gcash,card,cash"')
 
     def test_inactive_facility_detail_page_returns_not_found(self):
         self.facility.is_active = False

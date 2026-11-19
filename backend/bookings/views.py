@@ -87,6 +87,7 @@ class BookingCreateView(APIView):
                 raise ValidationError({
                     'resource_id': 'The requested facility is not currently bookable.'
                 }) from exc
+            requested_payment_method = requested.get('payment_method')
             try:
                 resource = (
                     BookableResource.objects.select_for_update()
@@ -101,6 +102,17 @@ class BookingCreateView(APIView):
                 raise ValidationError({
                     'resource_id': 'The requested resource is not currently bookable.'
                 }) from exc
+
+            payment_method = (
+                requested_payment_method
+                or resource.facility.available_payment_methods[0]
+            )
+            if payment_method not in resource.facility.available_payment_methods:
+                raise ValidationError({
+                    'payment_method': (
+                        'This facility does not accept the selected payment method.'
+                    )
+                })
 
             sport = requested['sport']
             if not sport.is_active:
@@ -183,10 +195,7 @@ class BookingCreateView(APIView):
                 status=Booking.Status.CONFIRMED,
                 rate_snapshot=hourly_rate,
                 total_price=hourly_rate,
-                payment_method=requested.get(
-                    'payment_method',
-                    Booking.PaymentMethod.GCASH,
-                ),
+                payment_method=payment_method,
             )
 
         return booking
@@ -207,7 +216,10 @@ class BookingCreateView(APIView):
                     'participant_names': batch.get('participant_names', ''),
                     'contact_email': batch['contact_email'],
                     'contact_phone': batch['contact_phone'],
-                    'payment_method': batch['payment_method'],
+                    'payment_method': (
+                        batch.get('payment_method')
+                        or slot['resource_id'].facility.available_payment_methods[0]
+                    ),
                 })
                 serializer.is_valid(raise_exception=True)
                 validated_slots.append(serializer.validated_data)

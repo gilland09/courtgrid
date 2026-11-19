@@ -28,6 +28,10 @@ class Facility(models.Model):
     )
     gcash_number = models.CharField(max_length=20, blank=True, default='')
     maya_number = models.CharField(max_length=20, blank=True, default='')
+    accepts_card = models.BooleanField(
+        default=False,
+        help_text='Accept card payments arranged directly with the venue.',
+    )
     wallet_account_name = models.CharField(max_length=120, blank=True, default='')
     payout_qr_label = models.CharField(max_length=120, blank=True, default='')
     payment_qr_image = models.FileField(
@@ -81,6 +85,18 @@ class Facility(models.Model):
 
     def __str__(self):
         return self.name
+
+    @property
+    def available_payment_methods(self):
+        methods = []
+        if self.gcash_number.strip():
+            methods.append('gcash')
+        if self.maya_number.strip():
+            methods.append('maya')
+        if self.accepts_card:
+            methods.append('card')
+        methods.append('cash')
+        return methods
 
 
 class FacilitySport(models.Model):

@@ -13,6 +13,19 @@
         return `${resourceId}-${startTime}`;
     }
 
+    function getAvailablePaymentMethods(configuredMethods) {
+        const configured = new Set(
+            (Array.isArray(configuredMethods)
+                ? configuredMethods
+                : String(configuredMethods || '').split(',')
+            ).map((method) => method.trim()).filter(Boolean),
+        );
+        configured.add('cash');
+        return ['gcash', 'maya', 'card', 'cash'].filter(
+            (method) => configured.has(method),
+        );
+    }
+
     function formatSlotTime(value) {
         return new Intl.DateTimeFormat('en-US', {
             timeZone: 'Asia/Manila',
@@ -63,6 +76,7 @@
     global.CourtGridAvailabilityHelpers = {
         getSevenDayDates,
         getSlotKey,
+        getAvailablePaymentMethods,
         formatSlotTime,
         calculateSlotTotal,
         calculateFeeBreakdown,

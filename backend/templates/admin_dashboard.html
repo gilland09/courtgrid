@@ -63,13 +63,24 @@
 <section class="card hover-lift mb-4" aria-labelledby="master-bookings-heading">
     <div class="card-body">
         <h2 id="master-bookings-heading" class="h4">All Confirmed Bookings</h2>
+        <form method="get" class="row g-2 align-items-end mb-3">
+            <div class="col-sm-5 col-md-4">
+                <label for="settlement-status-filter" class="form-label">Commission settlement</label>
+                <select id="settlement-status-filter" name="settlement_status" class="form-select">
+                    <option value="all" {% if settlement_status == 'all' %}selected{% endif %}>All statuses</option>
+                    <option value="pending" {% if settlement_status == 'pending' %}selected{% endif %}>Pending collection</option>
+                    <option value="paid" {% if settlement_status == 'paid' %}selected{% endif %}>Paid to Admin</option>
+                </select>
+            </div>
+            <div class="col-auto"><button type="submit" class="btn btn-outline-primary">Filter bookings</button></div>
+        </form>
         <div class="table-responsive">
             <table class="table table-striped align-middle mb-0">
                 <thead>
                     <tr>
                         <th>Facility / Court</th><th>Sport</th><th>Date / Time</th><th>Booked By</th>
                         <th>Contact</th><th>Participants</th><th>Player Roster</th><th>Booking GMV</th>
-                        <th>5% Commission Owed</th><th>Commission Collection</th><th>Payment Status / Reference</th>
+                        <th>5% Commission</th><th>Commission Status &amp; Settlement</th><th>Payment Status / Reference</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -86,14 +97,12 @@
                             <td>₱{{ booking.platform_fee_amount }}</td>
                             <td>
                                 {% if booking.platform_fee_collected %}
-                                    <span class="payment-receipt-badge">Collected</span>
+                                    <span class="badge text-bg-success">Paid to Admin</span>
                                 {% elif booking.payment_status == 'paid' %}
-                                    <span class="payment-receipt-badge payment-pending-badge">Owed by owner</span>
-                                    <form method="post" class="mt-1">
+                                    <span class="badge text-bg-warning">Pending Collection</span>
+                                    <form method="post" action="{% url 'settle_commission' booking.pk %}" class="mt-1">
                                         {% csrf_token %}
-                                        <input type="hidden" name="action" value="collect_commission">
-                                        <input type="hidden" name="booking_id" value="{{ booking.pk }}">
-                                        <button class="btn btn-sm btn-outline-primary" type="submit">Mark Collected</button>
+                                        <button class="btn btn-sm btn-outline-primary" type="submit">Mark Commission Paid</button>
                                     </form>
                                 {% else %}
                                     <span class="payment-receipt-badge">Not yet due</span>

@@ -70,6 +70,7 @@ class FacilityPayoutWalletForm(forms.ModelForm):
             'wallet_account_name',
             'gcash_number',
             'maya_number',
+            'accepts_card',
             'payout_qr_label',
             'payment_qr_image',
         )
@@ -80,11 +81,21 @@ class FacilityPayoutWalletForm(forms.ModelForm):
             'payout_qr_label': forms.TextInput(),
             'payment_qr_image': forms.ClearableFileInput(attrs={'accept': 'image/*'}),
         }
+        labels = {
+            'accepts_card': 'Accept card payments arranged directly with the venue',
+        }
+        help_texts = {
+            'accepts_card': (
+                'CourtGrid does not process card payments; customers coordinate '
+                'payment with your venue.'
+            ),
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
             field.widget.attrs.setdefault('class', 'form-control')
+        self.fields['accepts_card'].widget.attrs['class'] = 'form-check-input'
 
     def clean_payment_qr_image(self):
         uploaded = self.cleaned_data.get('payment_qr_image')

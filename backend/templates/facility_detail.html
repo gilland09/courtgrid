@@ -4,7 +4,7 @@
 {% block title %}{{ facility.name }} | CourtGrid{% endblock %}
 
 {% block content %}
-<section id="facility-detail" class="facility-page mb-5" data-facility-id="{{ facility.pk }}" data-facility-name="{{ facility.name }}" data-wallet-account-name="{{ facility.wallet_account_name }}" data-merchant-gcash="{{ facility.gcash_number }}" data-merchant-maya="{{ facility.maya_number }}" data-merchant-qr="{% if facility.payment_qr_image %}{{ facility.payment_qr_image.url }}{% endif %}">
+<section id="facility-detail" class="facility-page mb-5" data-facility-id="{{ facility.pk }}" data-facility-name="{{ facility.name }}" data-payment-methods="{{ available_payment_methods|join:',' }}" data-wallet-account-name="{{ facility.wallet_account_name }}" data-merchant-gcash="{{ facility.gcash_number }}" data-merchant-maya="{{ facility.maya_number }}" data-merchant-qr="{% if facility.payment_qr_image %}{{ facility.payment_qr_image.url }}{% endif %}">
     <a href="{% url 'home' %}" class="link-secondary text-decoration-none">&larr; Back to facilities</a>
     <header class="facility-detail-header mt-3">
         <div>
@@ -129,14 +129,14 @@
                                 </label>
                                 <label class="payment-method-option">
                                     <input type="radio" name="payment_method" value="card">
-                                    <span><strong>Card</strong><small>Credit / Debit</small></span>
+                                    <span><strong>Card</strong><small>Arrange payment with venue</small></span>
                                 </label>
                                 <label class="payment-method-option">
                                     <input type="radio" name="payment_method" value="cash">
                                     <span><strong>Pay at Venue</strong><small>Cash on arrival</small></span>
                                 </label>
                             </div>
-                            <p class="form-text mt-2 mb-0">GCash/Maya transfers are made directly to the venue outside CourtGrid and must be verified by the venue. Card checkout is unavailable; CourtGrid never collects wallet PINs, OTPs, or card details.</p>
+                            <p class="form-text mt-2 mb-0">Only methods configured by this venue are shown. GCash/Maya transfers and any card payment are arranged directly with the venue and must be verified there; CourtGrid does not process payments or collect wallet PINs, OTPs, or card details.</p>
                         </fieldset>
                         <section class="payment-breakdown mt-3" aria-label="Price breakdown">
                             <div><span id="rental-breakdown-label">Court Rental (0 slots)</span><strong id="rental-breakdown-amount">₱0.00</strong></div>
@@ -167,7 +167,13 @@
                         <section id="owner-merchant-payment" class="owner-merchant-payment" hidden aria-label="Owner merchant payment details">
                             <h4 class="h6">Pay directly to this venue's merchant account</h4>
                             <p id="owner-merchant-instructions" class="small text-body-secondary"></p>
-                            <img id="owner-merchant-qr" class="owner-merchant-qr" alt="Venue merchant QR code" hidden>
+                            <button id="owner-merchant-qr-open" class="merchant-qr-open" type="button" aria-label="View merchant QR code in high definition" hidden>
+                                <img id="owner-merchant-qr" class="owner-merchant-qr" alt="Venue merchant QR code">
+                            </button>
+                            <button id="owner-merchant-qr-view" class="btn btn-sm btn-outline-primary mt-2" type="button" hidden>
+                                <svg class="merchant-qr-view-icon" aria-hidden="true" viewBox="0 0 16 16"><path d="M11.5 10.5 15 14l-1 1-3.5-3.5a5.5 5.5 0 1 1 1-1ZM6.5 11a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9Z"/></svg>
+                                Click to View HD QR
+                            </button>
                             <p id="owner-merchant-no-qr" class="small text-body-secondary mb-0">No merchant QR image has been uploaded. Ask the venue for verified payment instructions.</p>
                         </section>
                         <p id="gateway-processing-status" class="small text-body-secondary" aria-live="polite">Use the demo action to continue to reservation confirmation.</p>
@@ -189,6 +195,21 @@
                 </section>
             </div>
         </section>
+    </div>
+</div>
+
+<div id="merchant-qr-lightbox" class="modal fade merchant-qr-lightbox" tabindex="-1" aria-labelledby="merchant-qr-lightbox-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content merchant-qr-lightbox-panel">
+            <div class="modal-header border-0 pb-0">
+                <h2 id="merchant-qr-lightbox-title" class="modal-title h5">Merchant QR Code</h2>
+                <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close high-definition merchant QR"></button>
+            </div>
+            <div class="modal-body text-center">
+                <img id="merchant-qr-lightbox-image" class="merchant-qr-lightbox-image" alt="High-definition venue merchant QR code">
+                <p class="small text-body-secondary mt-3 mb-0">Scan with your GCash or Maya app.</p>
+            </div>
+        </div>
     </div>
 </div>
 

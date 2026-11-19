@@ -182,6 +182,7 @@ def facility_detail_view(request, pk):
         )
     return render(request, 'facility_detail.html', {
         'facility': facility,
+        'available_payment_methods': facility.available_payment_methods,
         'facility_sports': facility.active_facility_sports,
         'operating_hours': facility.ordered_operating_hours,
         'today': timezone.localdate().isoformat(),

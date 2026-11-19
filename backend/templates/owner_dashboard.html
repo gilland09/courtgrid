@@ -17,7 +17,7 @@
 
 <section class="finance-kpis" aria-label="Owner financial summary">
     <article class="finance-kpi"><span>Direct Customer Collections (100%)</span><strong>₱{{ financial_totals.gross|floatformat:2 }}</strong></article>
-    <article class="finance-kpi"><span>CourtGrid 5% Commission Payable to Admin</span><strong>₱{{ financial_totals.platform_fee|floatformat:2 }}</strong></article>
+    <article class="finance-kpi"><span>5% Commission Payable to Admin (Pending)</span><strong>₱{{ financial_totals.platform_fee|floatformat:2 }}</strong><small>Settled: ₱{{ financial_totals.platform_fee_settled|floatformat:2 }}</small></article>
     <article class="finance-kpi is-revenue"><span>Net Owner Retained Earnings (95%)</span><strong>₱{{ financial_totals.owner_payout|floatformat:2 }}</strong></article>
 </section>
 <p class="sandbox-demo-notice mb-4">Only venue-verified customer payments count as collections. CourtGrid does not process customer transfers; platform commissions are manually collected from owners.</p>
@@ -219,9 +219,10 @@
                             <td>₱{{ booking.total_price }}</td>
                             <td>
                                 {% if booking.platform_fee_collected %}
-                                    <span class="payment-receipt-badge">Collected</span>
+                                    <span class="badge text-bg-success">Commission Settled · Paid to Admin</span>
                                 {% elif booking.payment_status == 'paid' %}
-                                    ₱{{ booking.platform_fee_amount }} · Payable
+                                    <span class="badge text-bg-warning">5% Commission Payable to Admin (Pending)</span>
+                                    <br>₱{{ booking.platform_fee_amount }}
                                 {% else %}
                                     <span class="text-body-secondary">Not due until payment is verified</span>
                                 {% endif %}

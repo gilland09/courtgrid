@@ -95,6 +95,13 @@ def owner_dashboard_context(user, facility_form=None):
                 platform_fee_collected=False,
             ),
         ),
+        platform_fee_settled=Sum(
+            'platform_fee_amount',
+            filter=Q(
+                payment_status=Booking.PaymentStatus.PAID,
+                platform_fee_collected=True,
+            ),
+        ),
         owner_payout=Sum(
             'owner_payout_amount',
             filter=Q(payment_status=Booking.PaymentStatus.PAID),
