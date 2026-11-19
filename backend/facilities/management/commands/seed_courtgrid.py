@@ -169,6 +169,7 @@ class Command(BaseCommand):
                     'is_active': True,
                     'is_demo_data': False,
                     'is_verified': True,
+                    'verification_status': Facility.VerificationStatus.VERIFIED,
                     'data_source': SEED_SOURCE,
                     'verified_by': 'Project owner',
                     'verification_date': None,

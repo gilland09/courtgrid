@@ -32,6 +32,8 @@ class FacilityDetailPageTests(APITestCase):
             name='Naval Test Court',
             barangay='Poblacion',
             capacity=30,
+            is_verified=True,
+            verification_status=Facility.VerificationStatus.VERIFIED,
         )
         FacilitySport.objects.create(
             facility=cls.facility,
@@ -116,11 +118,15 @@ class FacilityDiscoveryAPITests(APITestCase):
         cls.shared_facility = Facility.objects.create(
             name='Shared Sports Facility',
             is_demo_data=True,
+            is_verified=True,
+            verification_status=Facility.VerificationStatus.VERIFIED,
             latitude='11.000000',
             longitude='124.000000',
         )
         cls.basketball_facility = Facility.objects.create(
             name='Basketball Facility',
+            is_verified=True,
+            verification_status=Facility.VerificationStatus.VERIFIED,
         )
         cls.inactive_facility = Facility.objects.create(
             name='Inactive Facility',
@@ -203,8 +209,8 @@ class FacilityDiscoveryAPITests(APITestCase):
                 'resource_type': 'multipurpose',
             }],
         )
-        self.assertIsNone(shared['latitude'])
-        self.assertIsNone(shared['longitude'])
+        self.assertEqual(shared['latitude'], Decimal('11.000000'))
+        self.assertEqual(shared['longitude'], Decimal('124.000000'))
 
     def test_all_matching_requires_each_requested_active_sport(self):
         response = self.client.get(
@@ -240,14 +246,62 @@ class FacilityDiscoveryAPITests(APITestCase):
             name='Verified Facility',
             is_demo_data=False,
             is_verified=True,
+            verification_status=Facility.VerificationStatus.VERIFIED,
             latitude='11.000000',
             longitude='124.000000',
         )
         response = self.client.get(f'/api/facilities/{facility.id}/')
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['latitude'], Decimal('11.000000'))
-        self.assertEqual(response.data['longitude'], Decimal('124.000000'))
+        self.assertEqual(response.data['latitude'], 11.0)
+        self.assertEqual(response.data['longitude'], 124.0)
+
+    def test_public_discovery_excludes_pending_facilities(self):
+        pending_facilities = [
+            Facility.objects.create(
+                name='Pending facility',
+                is_active=True,
+                is_verified=False,
+                verification_status=Facility.VerificationStatus.PENDING,
+            ),
+            Facility.objects.create(
+                name='Inconsistent pending facility',
+                is_active=True,
+                is_verified=True,
+                verification_status=Facility.VerificationStatus.PENDING,
+            ),
+            Facility.objects.create(
+                name='Inconsistent unverified facility',
+                is_active=True,
+                is_verified=False,
+                verification_status=Facility.VerificationStatus.VERIFIED,
+            ),
+        ]
+        for facility in pending_facilities:
+            FacilitySport.objects.create(facility=facility, sport=self.basketball)
+        response = self.client.get('/api/facilities/')
+
+        self.assertEqual(response.status_code, 200)
+        public_names = [facility['name'] for facility in response.data['results']]
+        self.assertNotIn('Inactive Facility', public_names)
+        self.assertNotIn('Pending facility', public_names)
+        self.assertNotIn('Inconsistent pending facility', public_names)
+        self.assertNotIn('Inconsistent unverified facility', public_names)
+        self.assertIn('Shared Sports Facility', public_names)
+
+    def test_facility_detail_page_hides_pending_venue(self):
+        pending = Facility.objects.create(
+            name='Pending facility',
+            is_active=True,
+            is_verified=False,
+            verification_status=Facility.VerificationStatus.PENDING,
+        )
+
+        response = self.client.get(
+            reverse('facility-detail-page', kwargs={'pk': pending.pk}),
+        )
+
+        self.assertEqual(response.status_code, 404)
 
     def test_facility_sport_serializer_includes_sport_and_hourly_rate(self):
         facility_sport = FacilitySport.objects.get(

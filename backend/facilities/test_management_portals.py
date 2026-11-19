@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import time, timedelta
 from decimal import Decimal
 from tempfile import TemporaryDirectory
 
@@ -16,6 +16,7 @@ from .models import (
     Facility,
     FacilityClosure,
     FacilitySport,
+    ResourceSport,
     Sport,
 )
 
@@ -167,6 +168,163 @@ class InAppManagementPortalTests(TestCase):
         self.assertEqual(self.facility.maya_number, '0918-000-0001')
         self.assertTrue(self.facility.accepts_card)
         self.assertEqual(self.facility.payout_qr_label, 'Demo QR label')
+
+    def test_owner_onboarding_requires_dpa_consent_and_creates_pending_venue(self):
+        basketball = Sport.objects.create(name='Basketball', slug='basketball')
+        self.client.force_login(self.owner)
+        onboarding_data = {
+            'action': 'onboard_facility',
+            'name': 'New Naval Venue',
+            'barangay': 'Poblacion',
+            'address': '123 Main Road, Naval, Biliran',
+            'latitude': '11.560100',
+            'longitude': '124.394900',
+            'sports': [basketball.pk],
+            'court_count': '2',
+            'basketball_rate': '350.00',
+            'business_trade_name': 'New Naval Sports',
+            'business_permit_no': 'BRGY-2026-001',
+            'business_contact_number': '+639171234567',
+            'dpa_consent_accepted': 'on',
+        }
+
+        response = self.client.post(reverse('owner_dashboard'), onboarding_data)
+
+        self.assertRedirects(response, reverse('owner_dashboard'))
+        facility = Facility.objects.get(name='New Naval Venue')
+        self.assertEqual(facility.owner, self.owner)
+        self.assertFalse(facility.is_verified)
+        self.assertEqual(
+            facility.verification_status,
+            Facility.VerificationStatus.PENDING,
+        )
+        self.assertTrue(facility.dpa_consent_accepted)
+        self.assertIsNotNone(facility.dpa_consent_accepted_at)
+        self.assertEqual(facility.latitude, Decimal('11.560100'))
+        self.assertEqual(facility.longitude, Decimal('124.394900'))
+        self.assertEqual(facility.resources.count(), 2)
+        facility_sport = facility.facility_sports.get(sport=basketball)
+        self.assertEqual(facility_sport.hourly_rate, Decimal('350.00'))
+        self.assertEqual(facility.operating_hours.count(), 7)
+        self.assertEqual(
+            set(facility.operating_hours.values_list('start_time', 'end_time')),
+            {(time(8), time(21))},
+        )
+        self.assertEqual(facility_sport.schedules.count(), 7)
+        self.assertEqual(
+            set(facility_sport.schedules.values_list('start_time', 'end_time')),
+            {(time(8), time(21))},
+        )
+        self.assertEqual(ResourceSport.objects.filter(
+            resource__facility=facility,
+            facility_sport=facility_sport,
+        ).count(), 2)
+        owner_page = self.client.get(reverse('owner_dashboard'))
+        self.assertContains(owner_page, 'Pending Platform Verification')
+        self.assertEqual(
+            self.client.get(f'/facilities/{facility.pk}/').status_code,
+            404,
+        )
+
+        self.client.force_login(self.admin)
+        facility.is_verified = True
+        facility.is_active = False
+        facility.save(update_fields=('is_verified', 'is_active'))
+        admin_page = self.client.get(reverse('admin_dashboard'))
+        self.assertContains(admin_page, 'Pending Venue Verification Queue')
+        self.assertContains(admin_page, 'BRGY-2026-001')
+        self.assertContains(
+            self.client.get(reverse('management_facilities')),
+            'New Naval Venue',
+        )
+        approval = self.client.post(
+            reverse('admin_dashboard'),
+            {'action': 'approve_facility', 'facility_id': facility.pk},
+        )
+        self.assertRedirects(approval, reverse('admin_dashboard'))
+        facility.refresh_from_db()
+        self.assertTrue(facility.is_verified)
+        self.assertTrue(facility.is_active)
+        self.assertEqual(
+            facility.verification_status,
+            Facility.VerificationStatus.VERIFIED,
+        )
+        self.assertEqual(facility.verified_by, self.admin.username)
+        home_page = self.client.get(reverse('home'))
+        public_payload = self.client.get('/api/facilities/')
+        public_facilities = public_payload.json()['results']
+        public_venue = next(
+            item for item in public_facilities if item['id'] == facility.pk
+        )
+        self.assertEqual(home_page.status_code, 200)
+        self.assertIsInstance(public_venue['latitude'], float)
+        self.assertIsInstance(public_venue['longitude'], float)
+        self.assertAlmostEqual(public_venue['latitude'], 11.5601)
+        self.assertAlmostEqual(public_venue['longitude'], 124.3949)
+        filtered_payload = self.client.get(
+            '/api/facilities/',
+            {'sports': 'basketball'},
+        ).json()['results']
+        self.assertIn(facility.pk, [item['id'] for item in filtered_payload])
+
+        available_slots = self.client.get(
+            '/api/availability/search',
+            {
+                'date': (timezone.localdate() + timedelta(days=1)).isoformat(),
+                'sport': 'basketball',
+                'facility': facility.pk,
+                'mode': 'serial',
+            },
+        )
+        self.assertEqual(available_slots.status_code, 200)
+        self.assertEqual(len(available_slots.data['results']), 26)
+
+        rejected_facility = Facility.objects.create(
+            name='Rejected Naval Venue',
+            owner=self.owner,
+            business_permit_no='BRGY-2026-REJECT',
+            dpa_consent_accepted=True,
+            dpa_consent_accepted_at=timezone.now(),
+        )
+        rejection = self.client.post(
+            reverse('management_facilities'),
+            {
+                'action': 'reject_facility',
+                'facility_id': rejected_facility.pk,
+            },
+        )
+        self.assertRedirects(rejection, reverse('management_facilities'))
+        rejected_facility.refresh_from_db()
+        self.assertEqual(
+            rejected_facility.verification_status,
+            Facility.VerificationStatus.REJECTED,
+        )
+        self.assertFalse(rejected_facility.is_verified)
+
+    def test_owner_onboarding_rejects_submission_without_dpa_consent(self):
+        basketball = Sport.objects.create(name='Basketball', slug='basketball')
+        self.client.force_login(self.owner)
+
+        response = self.client.post(
+            reverse('owner_dashboard'),
+            {
+                'action': 'onboard_facility',
+                'name': 'No Consent Venue',
+                'barangay': 'Poblacion',
+                'address': 'Naval, Biliran',
+                'latitude': '11.560100',
+                'longitude': '124.394900',
+                'sports': [basketball.pk],
+                'court_count': '1',
+                'basketball_rate': '250.00',
+                'business_trade_name': 'No Consent Trade',
+                'business_permit_no': 'PERMIT-002',
+                'business_contact_number': '09171234567',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Facility.objects.filter(name='No Consent Venue').exists())
 
     def test_owner_cannot_update_another_owners_payout_destination(self):
         self.client.force_login(self.owner)
@@ -540,6 +698,16 @@ class InAppManagementPortalTests(TestCase):
         self.assertEqual(closure.reason, 'Court maintenance')
 
     def test_platform_admin_can_toggle_facility_verification(self):
+        self.facility.business_trade_name = 'Owner Test Business'
+        self.facility.business_permit_no = 'PERMIT-OWNER-001'
+        self.facility.business_contact_number = '09171234567'
+        self.facility.dpa_consent_accepted = True
+        self.facility.save(update_fields=(
+            'business_trade_name',
+            'business_permit_no',
+            'business_contact_number',
+            'dpa_consent_accepted',
+        ))
         self.client.force_login(self.admin)
 
         response = self.client.post(

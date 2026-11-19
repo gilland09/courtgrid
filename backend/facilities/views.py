@@ -57,7 +57,11 @@ class FacilityDiscoveryQuerysetMixin:
             is_active=True,
             sport__is_active=True,
         ).select_related('sport')
-        queryset = Facility.objects.filter(is_active=True).prefetch_related(
+        queryset = Facility.objects.filter(
+            is_active=True,
+            is_verified=True,
+            verification_status=Facility.VerificationStatus.VERIFIED,
+        ).prefetch_related(
             Prefetch(
                 'facility_sports',
                 queryset=active_facility_sports,
@@ -129,7 +133,11 @@ class FacilityDetailView(FacilityDiscoveryQuerysetMixin, RetrieveAPIView):
 
 def facility_detail_view(request, pk):
     facility = get_object_or_404(
-        Facility.objects.filter(is_active=True).prefetch_related(
+        Facility.objects.filter(
+            is_active=True,
+            is_verified=True,
+            verification_status=Facility.VerificationStatus.VERIFIED,
+        ).prefetch_related(
             Prefetch(
                 'facility_sports',
                 queryset=FacilitySport.objects.filter(

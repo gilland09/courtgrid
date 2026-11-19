@@ -148,21 +148,21 @@
                         {% endif %}
                         <div class="d-flex gap-2 mt-4">
                             <button type="button" class="btn btn-outline-secondary flex-fill" data-bs-dismiss="modal">Cancel</button>
-                            <button id="confirm-booking" type="submit" class="btn btn-primary flex-fill">Proceed to Demo Checkout</button>
+                            <button id="confirm-booking" type="submit" class="btn btn-primary flex-fill">Proceed to Checkout</button>
                         </div>
                     </div>
                 </form>
-                <section id="payment-gateway" class="sandbox-checkout" hidden aria-labelledby="gateway-title">
-                    <div class="sandbox-checkout-banner" id="gateway-banner">
-                        <p class="text-uppercase small fw-semibold mb-1">CourtGrid sandbox</p>
-                        <h3 id="gateway-title" class="h5 mb-0">Demo checkout</h3>
+                <section id="payment-gateway" class="checkout-panel" hidden aria-labelledby="gateway-title">
+                    <div class="checkout-banner" id="gateway-banner">
+                        <p class="text-uppercase small fw-semibold mb-1">CourtGrid checkout</p>
+                        <h3 id="gateway-title" class="h5 mb-0">Reservation checkout</h3>
                     </div>
-                    <div class="sandbox-checkout-body">
-                        <p class="sandbox-demo-notice" role="note">Wallet transfers are external and remain pending until venue verification. CourtGrid does not contact payment providers; never enter a wallet PIN, OTP, or card information here.</p>
-                        <div class="sandbox-merchant-details">
+                    <div class="checkout-panel-body">
+                        <p class="payment-processing-notice" role="note">Wallet and card payments are arranged directly with the venue and remain pending until venue verification. Never enter a wallet PIN, OTP, or card information on CourtGrid.</p>
+                        <div class="checkout-merchant-details">
                             <div><span>Merchant</span><strong id="gateway-merchant"></strong></div>
                             <div><span>Selected method</span><strong id="gateway-method"></strong></div>
-                            <div class="sandbox-amount"><span>Reservation amount</span><strong id="gateway-amount">₱0.00</strong></div>
+                            <div class="checkout-amount"><span>Reservation amount</span><strong id="gateway-amount">₱0.00</strong></div>
                         </div>
                         <section id="owner-merchant-payment" class="owner-merchant-payment" hidden aria-label="Owner merchant payment details">
                             <h4 class="h6">Pay directly to this venue's merchant account</h4>
@@ -176,9 +176,9 @@
                             </button>
                             <p id="owner-merchant-no-qr" class="small text-body-secondary mb-0">No merchant QR image has been uploaded. Ask the venue for verified payment instructions.</p>
                         </section>
-                        <p id="gateway-processing-status" class="small text-body-secondary" aria-live="polite">Use the demo action to continue to reservation confirmation.</p>
+                        <p id="gateway-processing-status" class="small text-body-secondary" aria-live="polite">Continue to submit your reservation.</p>
                         <div class="d-flex flex-column flex-sm-row gap-2">
-                            <button id="gateway-authorize" type="button" class="btn btn-primary flex-fill">Simulate Demo Checkout</button>
+                            <button id="gateway-authorize" type="button" class="btn btn-primary flex-fill">Continue to Reservation Confirmation</button>
                             <button id="gateway-back" type="button" class="btn btn-outline-secondary">Back</button>
                         </div>
                     </div>

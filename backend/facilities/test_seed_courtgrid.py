@@ -79,6 +79,10 @@ class SeedCourtGridCommandTests(TestCase):
             self.assertTrue(facility.is_active)
             self.assertFalse(facility.is_demo_data)
             self.assertTrue(facility.is_verified)
+            self.assertEqual(
+                facility.verification_status,
+                Facility.VerificationStatus.VERIFIED,
+            )
             self.assertEqual(facility.address, facility_data['address'])
             self.assertEqual(facility.barangay, facility_data['barangay'])
             self.assertEqual(facility.capacity, facility_data['capacity'])

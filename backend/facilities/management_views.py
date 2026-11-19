@@ -1,3 +1,4 @@
+from datetime import time
 from decimal import Decimal
 from functools import wraps
 
@@ -17,6 +18,8 @@ from .models import (
     FacilityClosure,
     FacilityOperatingHours,
     FacilitySport,
+    ResourceSport,
+    SportSchedule,
 )
 from .portal_forms import (
     AdminFacilityForm,
@@ -26,6 +29,7 @@ from .portal_forms import (
     FacilityOperatingHoursForm,
     FacilityPayoutWalletForm,
     FacilitySportForm,
+    FacilityOnboardingForm,
 )
 
 
@@ -49,7 +53,7 @@ def owner_facilities(user):
     return Facility.objects.filter(owner=user)
 
 
-def owner_dashboard_context(user, facility_form=None):
+def owner_dashboard_context(user, onboarding_form=None):
     facilities = owner_facilities(user).prefetch_related(
         'facility_sports__sport',
         'resources',
@@ -110,7 +114,8 @@ def owner_dashboard_context(user, facility_form=None):
     return {
         'facilities': facilities,
         'facility_panels': facility_panels,
-        'facility_form': facility_form or FacilityForm(),
+        'onboarding_form': onboarding_form or FacilityOnboardingForm(),
+        'can_onboard_facility': get_user_role(user) == UserProfile.Role.COURT_OWNER,
         'hours_form': FacilityOperatingHoursForm(),
         'closure_form': FacilityClosureForm(facilities=facilities),
         'closures': closures,
@@ -180,6 +185,32 @@ def remove_facility_closure(facilities, closure_id):
         closure.delete()
 
 
+def set_facility_verification(facility, reviewer, status):
+    if status not in Facility.VerificationStatus.values:
+        raise ValueError(f'Unsupported facility verification status: {status}')
+    verified = status == Facility.VerificationStatus.VERIFIED
+    facility.verification_status = status
+    facility.is_verified = verified
+    if verified:
+        facility.is_active = True
+    facility.verified_by = reviewer.get_username() if verified else ''
+    facility.verification_date = timezone.localdate() if verified else None
+    facility.save(update_fields=(
+        'verification_status',
+        'is_verified',
+        'is_active',
+        'verified_by',
+        'verification_date',
+    ))
+
+
+def pending_venue_verifications():
+    return Facility.objects.filter(
+        verification_status=Facility.VerificationStatus.PENDING,
+        dpa_consent_accepted=True,
+    ).select_related('owner').order_by('pk')
+
+
 @roles_required(UserProfile.Role.COURT_OWNER, UserProfile.Role.ADMIN)
 def owner_dashboard_view(request):
     facilities = owner_facilities(request.user)
@@ -187,19 +218,121 @@ def owner_dashboard_view(request):
         action = request.POST.get('action')
         if action == 'save_facility':
             facility_id = request.POST.get('facility_id')
-            instance = get_object_or_404(facilities, pk=facility_id) if facility_id else None
+            if not facility_id:
+                raise PermissionDenied('Use the facility onboarding form to add a venue.')
+            instance = get_object_or_404(facilities, pk=facility_id)
             form = FacilityForm(request.POST, instance=instance)
             if form.is_valid():
                 facility = form.save(commit=False)
-                if instance is None:
-                    facility.owner = request.user
+                business_details_changed = any(
+                    field in form.changed_data
+                    for field in (
+                        'business_trade_name',
+                        'business_permit_no',
+                        'business_contact_number',
+                    )
+                )
+                if business_details_changed:
+                    facility.verification_status = Facility.VerificationStatus.PENDING
+                    facility.is_verified = False
+                    facility.verified_by = ''
+                    facility.verification_date = None
                 facility.save()
-                messages.success(request, 'Facility details saved.')
+                messages.success(
+                    request,
+                    'Facility details saved.'
+                    + (
+                        ' Updated business credentials were returned to pending platform verification.'
+                        if business_details_changed else ''
+                    ),
+                )
             else:
                 portal_error(request, form, 'Please correct the facility details.')
                 context = owner_dashboard_context(request.user)
-                context['facility_form'] = form
+                context['facility_panels'] = [
+                    {
+                        **panel,
+                        'facility_form': form if panel['facility'].pk == instance.pk else panel['facility_form'],
+                    }
+                    for panel in context['facility_panels']
+                ]
                 return render(request, 'owner_dashboard.html', context)
+        elif action == 'onboard_facility':
+            if get_user_role(request.user) != UserProfile.Role.COURT_OWNER:
+                raise PermissionDenied('Only court owners can submit venue onboarding.')
+            form = FacilityOnboardingForm(request.POST)
+            if form.is_valid():
+                with transaction.atomic():
+                    facility = Facility.objects.create(
+                        owner=request.user,
+                        name=form.cleaned_data['name'],
+                        barangay=form.cleaned_data['barangay'],
+                        address=form.cleaned_data['address'],
+                        latitude=form.cleaned_data['latitude'],
+                        longitude=form.cleaned_data['longitude'],
+                        facility_type=', '.join(
+                            sport.name for sport in form.cleaned_data['sports']
+                        ),
+                        business_trade_name=form.cleaned_data['business_trade_name'],
+                        business_permit_no=form.cleaned_data['business_permit_no'],
+                        business_contact_number=form.cleaned_data['business_contact_number'],
+                        dpa_consent_accepted=True,
+                        dpa_consent_accepted_at=timezone.now(),
+                        verification_status=Facility.VerificationStatus.PENDING,
+                        is_verified=False,
+                        is_demo_data=False,
+                    )
+                    facility_sports = [
+                        FacilitySport.objects.create(
+                            facility=facility,
+                            sport=sport,
+                            hourly_rate=form.cleaned_data[f'{sport.slug}_rate'],
+                        )
+                        for sport in form.cleaned_data['sports']
+                    ]
+                    operating_hours = [
+                        FacilityOperatingHours(
+                            facility=facility,
+                            day_of_week=day,
+                            start_time=time(8),
+                            end_time=time(21),
+                        )
+                        for day in range(7)
+                    ]
+                    FacilityOperatingHours.objects.bulk_create(operating_hours)
+                    SportSchedule.objects.bulk_create([
+                        SportSchedule(
+                            facility_sport=facility_sport,
+                            day_of_week=day,
+                            start_time=time(8),
+                            end_time=time(21),
+                        )
+                        for facility_sport in facility_sports
+                        for day in range(7)
+                    ])
+                    resources = [
+                        BookableResource.objects.create(
+                            facility=facility,
+                            name=f'Court {index}',
+                        )
+                        for index in range(1, form.cleaned_data['court_count'] + 1)
+                    ]
+                    ResourceSport.objects.bulk_create([
+                        ResourceSport(resource=resource, facility_sport=facility_sport)
+                        for resource in resources
+                        for facility_sport in facility_sports
+                    ])
+                messages.success(
+                    request,
+                    'Venue onboarding submitted. Your courts are ready to configure while the venue is pending platform verification.',
+                )
+            else:
+                portal_error(request, form, 'Please complete all required onboarding details.')
+                return render(
+                    request,
+                    'owner_dashboard.html',
+                    owner_dashboard_context(request.user, onboarding_form=form),
+                )
         elif action == 'save_resource':
             facility = get_object_or_404(facilities, pk=request.POST.get('facility_id'))
             resource_id = request.POST.get('resource_id')
@@ -321,10 +454,66 @@ def owner_dashboard_view(request):
 def management_facilities_view(request):
     if request.method == 'POST':
         action = request.POST.get('action')
+        if action in {'approve_facility', 'reject_facility'}:
+            with transaction.atomic():
+                facility = get_object_or_404(
+                    Facility.objects.select_for_update().filter(
+                        verification_status=Facility.VerificationStatus.PENDING,
+                        dpa_consent_accepted=True,
+                    ),
+                    pk=request.POST.get('facility_id'),
+                )
+                if action == 'approve_facility' and not all((
+                    facility.business_trade_name.strip(),
+                    facility.business_permit_no.strip(),
+                    facility.business_contact_number.strip(),
+                )):
+                    messages.error(
+                        request,
+                        'Venue approval requires a trade name, permit number, and business contact number.',
+                    )
+                    return redirect('management_facilities')
+                status = (
+                    Facility.VerificationStatus.VERIFIED
+                    if action == 'approve_facility'
+                    else Facility.VerificationStatus.REJECTED
+                )
+                set_facility_verification(facility, request.user, status)
+            messages.success(
+                request,
+                f'{facility.name} verification marked {facility.get_verification_status_display().lower()}.',
+            )
+            return redirect('management_facilities')
         facility = get_object_or_404(Facility, pk=request.POST.get('facility_id'))
         if action == 'toggle_verified':
-            facility.is_verified = not facility.is_verified
-            facility.save(update_fields=('is_verified',))
+            with transaction.atomic():
+                facility = get_object_or_404(
+                    Facility.objects.select_for_update(),
+                    pk=facility.pk,
+                )
+                if facility.is_verified:
+                    set_facility_verification(
+                        facility,
+                        request.user,
+                        Facility.VerificationStatus.PENDING,
+                    )
+                elif all((
+                    facility.dpa_consent_accepted,
+                    facility.business_trade_name.strip(),
+                    facility.business_permit_no.strip(),
+                    facility.business_contact_number.strip(),
+                )):
+                    set_facility_verification(
+                        facility,
+                        request.user,
+                        Facility.VerificationStatus.VERIFIED,
+                    )
+                else:
+                    messages.error(
+                        request,
+                        'Venue verification requires business credentials and recorded DPA consent.',
+                    )
+                    return redirect('management_facilities')
             messages.success(request, 'Facility verification status updated.')
         elif action == 'toggle_active':
             facility.is_active = not facility.is_active
@@ -369,6 +558,7 @@ def management_facilities_view(request):
     return render(request, 'management_facilities.html', {
         'facilities': facilities,
         'facility_panels': facility_panels,
+        'pending_facilities': pending_venue_verifications(),
     })
 
 

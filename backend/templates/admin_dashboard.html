@@ -24,7 +24,48 @@
     <article class="finance-kpi"><span>Owner Direct Collections (95% Retained)</span><strong>₱{{ financial_totals.owner_payout|floatformat:2 }}</strong></article>
     <article class="finance-kpi"><span>Active Verified Venues &amp; Courts</span><strong>{{ active_verified_venues }} venues · {{ active_courts }} courts</strong></article>
 </section>
-<p class="sandbox-demo-notice mb-4">Venue-verified payments are customer-to-owner transfers. CourtGrid does not process customer funds; owners remit platform commissions manually.</p>
+<p class="payment-processing-notice mb-4">Payments are made directly to venue owners. CourtGrid does not process customer funds; owners remit platform commissions manually.</p>
+
+<section class="card hover-lift mb-4" aria-labelledby="pending-verification-heading">
+    <div class="card-body">
+        <h2 id="pending-verification-heading" class="h4">Pending Venue Verification Queue</h2>
+        <p class="text-body-secondary">Review submitted business credentials before publishing a venue to public discovery.</p>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle mb-0">
+                <thead><tr><th>Venue / Location</th><th>Owner</th><th>Business details</th><th>Submitted</th><th>Review</th></tr></thead>
+                <tbody>
+                    {% for facility in pending_facilities %}
+                        <tr>
+                            <td><strong>{{ facility.name }}</strong><br>{{ facility.address }}, {{ facility.barangay }}, Naval, Biliran</td>
+                            <td>{{ facility.owner.get_full_name|default:facility.owner.get_username|default:"Unassigned" }}<br>{{ facility.owner.email }}</td>
+                            <td>{{ facility.business_trade_name }}<br>Permit: {{ facility.business_permit_no }}<br>Contact: {{ facility.business_contact_number }}</td>
+                            <td>{{ facility.dpa_consent_accepted_at|date:"M j, Y g:i A" }}</td>
+                            <td>
+                                <div class="d-flex flex-wrap gap-2">
+                                    <form method="post">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="approve_facility">
+                                        <input type="hidden" name="facility_id" value="{{ facility.pk }}">
+                                        <button class="btn btn-sm btn-success" type="submit">Approve &amp; Verify</button>
+                                    </form>
+                                    <form method="post">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="reject_facility">
+                                        <input type="hidden" name="facility_id" value="{{ facility.pk }}">
+                                        <button class="btn btn-sm btn-outline-danger" type="submit">Reject</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="5" class="text-body-secondary">No venues are awaiting verification.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <a class="btn btn-outline-primary btn-sm mt-3" href="{% url 'management_facilities' %}">Open Facility Management</a>
+    </div>
+</section>
 
 <section class="card hover-lift mb-4" aria-labelledby="today-bookings-heading">
     <div class="card-body">

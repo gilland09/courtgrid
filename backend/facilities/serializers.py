@@ -53,19 +53,26 @@ class FacilitySerializer(serializers.ModelSerializer):
             'capacity',
             'is_demo_data',
             'is_verified',
+            'verification_status',
             'supported_sports',
             'matching_sports',
             'resources',
         )
 
     def get_latitude(self, obj):
-        if obj.is_verified and not obj.is_demo_data:
-            return obj.latitude
+        if (
+            obj.is_verified
+            and obj.verification_status == Facility.VerificationStatus.VERIFIED
+        ):
+            return float(obj.latitude) if obj.latitude is not None else None
         return None
 
     def get_longitude(self, obj):
-        if obj.is_verified and not obj.is_demo_data:
-            return obj.longitude
+        if (
+            obj.is_verified
+            and obj.verification_status == Facility.VerificationStatus.VERIFIED
+        ):
+            return float(obj.longitude) if obj.longitude is not None else None
         return None
 
     def get_supported_sports(self, obj):

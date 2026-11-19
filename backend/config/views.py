@@ -14,6 +14,10 @@ from django.views.decorators.http import require_POST
 
 from bookings.models import Booking, UserProfile, get_user_role
 from facilities.models import BookableResource, Facility, FacilityClosure, Sport
+from facilities.management_views import (
+    pending_venue_verifications,
+    set_facility_verification,
+)
 from .forms import RegistrationForm
 
 
@@ -72,6 +76,40 @@ def home_view(request):
 def admin_dashboard_view(request):
     if request.method == 'POST':
         action = request.POST.get('action')
+        if action in {'approve_facility', 'reject_facility'}:
+            with transaction.atomic():
+                facility = get_object_or_404(
+                    Facility.objects.select_for_update().filter(
+                        verification_status=Facility.VerificationStatus.PENDING,
+                        dpa_consent_accepted=True,
+                    ),
+                    pk=request.POST.get('facility_id'),
+                )
+                if action == 'approve_facility' and not all((
+                    facility.business_trade_name.strip(),
+                    facility.business_permit_no.strip(),
+                    facility.business_contact_number.strip(),
+                )):
+                    messages.error(
+                        request,
+                        'Venue approval requires a trade name, permit number, and business contact number.',
+                    )
+                    return redirect('admin_dashboard')
+                verification_status = (
+                    Facility.VerificationStatus.VERIFIED
+                    if action == 'approve_facility'
+                    else Facility.VerificationStatus.REJECTED
+                )
+                set_facility_verification(
+                    facility,
+                    request.user,
+                    verification_status,
+                )
+            messages.success(
+                request,
+                f'{facility.name} verification marked {facility.get_verification_status_display().lower()}.',
+            )
+            return redirect('admin_dashboard')
         if action not in {'collect_commission', 'verify_payment'}:
             return redirect('admin_dashboard')
         with transaction.atomic():
@@ -194,6 +232,7 @@ def admin_dashboard_view(request):
     return render(request, 'admin_dashboard.html', {
         'todays_bookings': todays_bookings,
         'active_closures': active_closures,
+        'pending_facilities': pending_venue_verifications(),
         'all_bookings': visible_bookings,
         'settlement_status': settlement_status,
         'owner_commission_ledger': owner_commission_ledger,
@@ -204,11 +243,13 @@ def admin_dashboard_view(request):
         'active_verified_venues': Facility.objects.filter(
             is_active=True,
             is_verified=True,
+            verification_status=Facility.VerificationStatus.VERIFIED,
         ).count(),
         'active_courts': BookableResource.objects.filter(
             is_active=True,
             facility__is_active=True,
             facility__is_verified=True,
+            facility__verification_status=Facility.VerificationStatus.VERIFIED,
         ).count(),
     })
 

@@ -18,6 +18,11 @@ class Sport(models.Model):
 
 
 class Facility(models.Model):
+    class VerificationStatus(models.TextChoices):
+        PENDING = 'pending', 'Pending Verification'
+        VERIFIED = 'verified', 'Verified'
+        REJECTED = 'rejected', 'Rejected'
+
     name = models.CharField(max_length=200)
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -56,6 +61,16 @@ class Facility(models.Model):
         validators=[MinValueValidator(-180), MaxValueValidator(180)],
     )
     facility_type = models.CharField(max_length=50, blank=True)
+    business_trade_name = models.CharField(max_length=200, blank=True, default='')
+    business_permit_no = models.CharField(max_length=100, blank=True, default='')
+    business_contact_number = models.CharField(max_length=32, blank=True, default='')
+    dpa_consent_accepted = models.BooleanField(default=False)
+    dpa_consent_accepted_at = models.DateTimeField(null=True, blank=True)
+    verification_status = models.CharField(
+        max_length=20,
+        choices=VerificationStatus.choices,
+        default=VerificationStatus.PENDING,
+    )
     capacity = models.PositiveIntegerField(null=True, blank=True)
     default_hourly_rate = models.DecimalField(
         max_digits=10,

@@ -38,9 +38,7 @@ function renderFacilitiesList(facilities) {
 
         const facilityLabel = document.createElement('span');
         facilityLabel.className = 'facility-eyebrow';
-        facilityLabel.textContent = facility.is_demo_data
-            ? 'Demo facility'
-            : 'Sports facility';
+        facilityLabel.textContent = 'CourtGrid-Verified Venue';
         cardBody.append(facilityLabel);
 
         const title = document.createElement('h3');
@@ -54,12 +52,12 @@ function renderFacilitiesList(facilities) {
         cardBody.append(location);
 
         const verification = document.createElement('p');
-        verification.className = facility.is_verified && !facility.is_demo_data
+        verification.className = facility.is_verified && facility.verification_status === 'verified'
             ? 'location-status is-verified'
             : 'location-status';
-        verification.textContent = facility.is_verified && !facility.is_demo_data
+        verification.textContent = facility.is_verified && facility.verification_status === 'verified'
             ? 'Verified location'
-            : 'Demo location - verification pending';
+            : 'Pending platform verification';
         cardBody.append(verification);
 
         const sportBadges = document.createElement('div');
@@ -134,6 +132,14 @@ function renderMapPins(facilities) {
         activeMarkers.push(marker);
     });
     pinCount.textContent = `${activeMarkers.length} verified ${activeMarkers.length === 1 ? 'pin' : 'pins'}`;
+    if (activeMarkers.length === 1) {
+        facilityMap.setView(activeMarkers[0].getLatLng(), Math.min(facilityMap.getZoom(), 15));
+    } else if (activeMarkers.length > 1) {
+        facilityMap.fitBounds(
+            L.featureGroup(activeMarkers).getBounds(),
+            { padding: [24, 24], maxZoom: 15 },
+        );
+    }
 }
 
 async function fetchFacilities(sportSlugs = []) {

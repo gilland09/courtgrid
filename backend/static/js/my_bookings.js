@@ -89,7 +89,7 @@ function showReceipt(booking) {
     );
     addReceiptRow('Total amount', `${booking.currency || 'PHP'} ${booking.total_price}`);
     const notice = document.createElement('p');
-    notice.className = 'sandbox-demo-notice mb-0 mt-3';
+    notice.className = 'payment-processing-notice mb-0 mt-3';
     notice.textContent = booking.payment_status === 'paid'
         ? `Payment verification recorded${booking.payment_verified_at ? ` on ${formatBookingDateTime(booking.payment_verified_at)}` : ''}.`
         : 'This is a reservation record, not proof of payment. The venue must verify any external wallet transfer.';

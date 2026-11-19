@@ -179,7 +179,7 @@ function updateCheckoutButton() {
     confirmBookingButton.textContent = method === 'cash'
         ? 'Confirm Reservation · Pay at Venue'
         : method === 'card'
-            ? `Proceed to Demo Checkout (${formatCurrency(selectedTotal())})`
+            ? `Continue to Payment Instructions (${formatCurrency(selectedTotal())})`
             : `Continue to Merchant Payment (${formatCurrency(selectedTotal())})`;
 }
 
@@ -213,8 +213,8 @@ function openPaymentInstructions() {
     };
     gatewayTitle.textContent = isWalletPayment
         ? `${names[method]} Merchant Transfer`
-        : `${names[method]} Sandbox Checkout`;
-    gatewayBanner.className = `sandbox-checkout-banner sandbox-${method}`;
+        : `${names[method]} Payment Instructions`;
+    gatewayBanner.className = `checkout-banner checkout-${method}`;
     gatewayMerchant.textContent = (
         facilityDetail.dataset.walletAccountName
         || `${facilityDetail.dataset.facilityName} merchant (not configured)`
@@ -243,12 +243,12 @@ function openPaymentInstructions() {
         }
     }
     gatewayProcessingStatus.textContent = isWalletPayment
-        ? 'After sending the transfer in your wallet app, continue to create a reservation. Payment remains pending until the venue verifies it.'
-        : 'Sandbox only. No card payment can be processed here; continuing creates a reservation with payment pending.';
+        ? 'After sending the transfer in your wallet app, continue to submit your reservation. Payment remains pending until the venue verifies it.'
+        : 'Arrange payment directly with the venue, then continue to submit your reservation. Payment remains pending until the venue verifies it.';
     gatewayAuthorizeButton.disabled = false;
     gatewayAuthorizeButton.textContent = isWalletPayment
-        ? 'I sent the transfer · Submit reservation'
-        : 'Create reservation · No payment processed';
+        ? 'I arranged the transfer · Submit reservation'
+        : 'Continue to Reservation Confirmation';
     bookingFields.hidden = true;
     paymentGateway.hidden = false;
 }
@@ -659,12 +659,12 @@ function showConfirmedState(payload, bookedSlots, names) {
         'Estimated platform fee (5%)',
         formatCurrency(amount * 0.05),
     );
-    const sandboxNotice = document.createElement('p');
-    sandboxNotice.className = 'sandbox-demo-notice mb-0';
-    sandboxNotice.textContent = bookings[0]?.payment_status === 'paid'
+    const paymentNotice = document.createElement('p');
+    paymentNotice.className = 'payment-processing-notice mb-0';
+    paymentNotice.textContent = bookings[0]?.payment_status === 'paid'
         ? 'Payment was manually verified by the venue. This receipt does not represent CourtGrid payment processing.'
         : 'Reservation receipt only. No payment has been verified or collected by CourtGrid.';
-    bookingConfirmedSummary.append(sandboxNotice);
+    bookingConfirmedSummary.append(paymentNotice);
     appendSummaryRow(
         bookingConfirmedSummary,
         'Players',
@@ -677,13 +677,13 @@ function showConfirmedState(payload, bookedSlots, names) {
     bookingConfirmedState.hidden = false;
 }
 
-async function submitBooking(event, demoCheckout = false) {
+async function submitBooking(event, paymentStepCompleted = false) {
     event?.preventDefault();
     if (selectedSlots.length === 0) {
         showBookingError(['Select at least one available court slot first.']);
         return;
     }
-    if (!demoCheckout && !validateBookingForm()) {
+    if (!paymentStepCompleted && !validateBookingForm()) {
         return;
     }
 
@@ -702,7 +702,7 @@ async function submitBooking(event, demoCheckout = false) {
         return;
     }
     participantCount.setCustomValidity('');
-    if (!demoCheckout && selectedPaymentMethod() !== 'cash') {
+    if (!paymentStepCompleted && selectedPaymentMethod() !== 'cash') {
         openPaymentInstructions();
         return;
     }

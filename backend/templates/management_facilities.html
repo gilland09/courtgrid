@@ -16,6 +16,44 @@
     {% endfor %}
 {% endif %}
 
+<section class="card mb-4" aria-labelledby="pending-facilities-heading">
+    <div class="card-body">
+        <h2 id="pending-facilities-heading" class="h4">Pending Venue Verification Queue</h2>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle mb-0">
+                <thead><tr><th>Venue / Address</th><th>Owner</th><th>Business credentials</th><th>Action</th></tr></thead>
+                <tbody>
+                    {% for facility in pending_facilities %}
+                        <tr>
+                            <td>{{ facility.name }}<br>{{ facility.address }}, {{ facility.barangay }}, Naval, Biliran</td>
+                            <td>{{ facility.owner.get_username|default:"Unassigned" }}<br>{{ facility.owner.email }}</td>
+                            <td>{{ facility.business_trade_name }}<br>Permit: {{ facility.business_permit_no }}<br>Contact: {{ facility.business_contact_number }}</td>
+                            <td>
+                                <div class="d-flex flex-wrap gap-2">
+                                    <form method="post">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="facility_id" value="{{ facility.pk }}">
+                                        <input type="hidden" name="action" value="approve_facility">
+                                        <button class="btn btn-sm btn-success" type="submit">Approve &amp; Verify</button>
+                                    </form>
+                                    <form method="post">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="facility_id" value="{{ facility.pk }}">
+                                        <input type="hidden" name="action" value="reject_facility">
+                                        <button class="btn btn-sm btn-outline-danger" type="submit">Reject</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="4" class="text-body-secondary">No venues are awaiting verification.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
 {% for panel in facility_panels %}
     <section class="card mb-4">
         <div class="card-body">

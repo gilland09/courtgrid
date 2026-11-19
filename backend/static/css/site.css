@@ -854,8 +854,7 @@ form textarea:focus {
     font-weight: 700;
 }
 
-.payment-receipt-badge.payment-pending-badge,
-.payment-receipt-badge.sandbox-state-badge {
+.payment-receipt-badge.payment-pending-badge {
     color: #624900;
     background: #fff3cd;
 }
@@ -867,42 +866,42 @@ form textarea:focus {
     background: #f7f9f7;
 }
 
-.sandbox-checkout[hidden] {
+.checkout-panel[hidden] {
     display: none;
 }
 
-.sandbox-checkout {
+.checkout-panel {
     overflow: hidden;
     border: 1px solid rgba(112, 128, 144, 0.2);
     border-radius: 16px;
     background: #fff;
 }
 
-.sandbox-checkout-banner {
+.checkout-banner {
     padding: 1.1rem 1.25rem;
     color: #fff;
     background: #27392d;
 }
 
-.sandbox-checkout-banner.sandbox-gcash {
+.checkout-banner.checkout-gcash {
     background: #315a85;
 }
 
-.sandbox-checkout-banner.sandbox-maya {
+.checkout-banner.checkout-maya {
     background: #246340;
 }
 
-.sandbox-checkout-banner.sandbox-card {
+.checkout-banner.checkout-card {
     background: #34445a;
 }
 
-.sandbox-checkout-body {
+.checkout-panel-body {
     display: grid;
     gap: 1rem;
     padding: 1.1rem 1.25rem;
 }
 
-.sandbox-demo-notice {
+.payment-processing-notice {
     margin: 0;
     padding: 0.75rem;
     border: 1px solid #e8c878;
@@ -913,31 +912,31 @@ form textarea:focus {
     font-weight: 650;
 }
 
-.sandbox-merchant-details {
+.checkout-merchant-details {
     display: grid;
     gap: 0.7rem;
 }
 
-.sandbox-merchant-details > div {
+.checkout-merchant-details > div {
     display: flex;
     justify-content: space-between;
     gap: 1rem;
 }
 
-.sandbox-merchant-details span {
+.checkout-merchant-details span {
     color: #6d786f;
 }
 
-.sandbox-merchant-details strong {
+.checkout-merchant-details strong {
     text-align: right;
 }
 
-.sandbox-merchant-details .sandbox-amount {
+.checkout-merchant-details .checkout-amount {
     padding-top: 0.7rem;
     border-top: 1px solid rgba(112, 128, 144, 0.2);
 }
 
-.sandbox-amount strong {
+.checkout-amount strong {
     color: #1e5631;
     font-size: 1.15rem;
 }
