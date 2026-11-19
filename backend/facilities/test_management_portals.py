@@ -516,6 +516,159 @@ class InAppManagementPortalTests(TestCase):
         booking.refresh_from_db()
         self.assertEqual(booking.payment_status, Booking.PaymentStatus.PENDING)
 
+    def test_owner_can_cancel_pending_booking_and_release_slot(self):
+        booking = Booking.objects.create(
+            user=self.customer,
+            resource=self.resource,
+            sport=self.sport,
+            start_datetime=timezone.now() + timedelta(days=9),
+            end_datetime=timezone.now() + timedelta(days=9, hours=1),
+            participant_count=2,
+            rate_snapshot=Decimal('200.00'),
+            total_price=Decimal('200.00'),
+        )
+        self.client.force_login(self.owner)
+
+        response = self.client.post(
+            reverse('owner_cancel_booking', kwargs={'booking_id': booking.pk}),
+            {'cancellation_reason': '  Player requested an alternate time.  '},
+        )
+
+        self.assertRedirects(response, reverse('owner_dashboard'))
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CANCELLED)
+        self.assertEqual(
+            booking.cancellation_reason,
+            'Player requested an alternate time.',
+        )
+        self.assertIsNotNone(booking.cancelled_at)
+        from .availability import has_confirmed_booking
+        self.assertFalse(has_confirmed_booking(
+            self.resource,
+            booking.start_datetime,
+            booking.end_datetime,
+        ))
+
+    def test_owner_can_cancel_paid_booking_without_erasing_payment_audit(self):
+        verified_at = timezone.now()
+        booking = Booking.objects.create(
+            user=self.customer,
+            resource=self.resource,
+            sport=self.sport,
+            start_datetime=timezone.now() + timedelta(days=10),
+            end_datetime=timezone.now() + timedelta(days=10, hours=1),
+            participant_count=2,
+            rate_snapshot=Decimal('200.00'),
+            total_price=Decimal('200.00'),
+            payment_status=Booking.PaymentStatus.PAID,
+            payment_verified_at=verified_at,
+            payment_verified_by=self.owner,
+        )
+        self.client.force_login(self.owner)
+
+        response = self.client.post(
+            reverse('owner_cancel_booking', kwargs={'booking_id': booking.pk}),
+            {'cancellation_reason': 'Facility maintenance'},
+        )
+
+        self.assertRedirects(response, reverse('owner_dashboard'))
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CANCELLED)
+        self.assertEqual(booking.payment_status, Booking.PaymentStatus.PAID)
+        self.assertEqual(booking.payment_verified_by, self.owner)
+        self.assertEqual(booking.payment_verified_at, verified_at)
+        self.assertEqual(
+            booking.cancellation_reason,
+            'Cancelled by venue owner after payment was received: Facility maintenance',
+        )
+        dashboard = self.client.get(reverse('owner_dashboard'))
+        self.assertNotContains(dashboard, booking.payment_reference)
+        self.assertEqual(
+            dashboard.context['financial_totals']['owner_payout'],
+            Decimal('0.00'),
+        )
+
+    def test_paid_booking_cancel_button_shows_refund_warning(self):
+        booking = Booking.objects.create(
+            user=self.customer,
+            resource=self.resource,
+            sport=self.sport,
+            start_datetime=timezone.now() + timedelta(days=11),
+            end_datetime=timezone.now() + timedelta(days=11, hours=1),
+            participant_count=2,
+            rate_snapshot=Decimal('200.00'),
+            total_price=Decimal('200.00'),
+            payment_status=Booking.PaymentStatus.PAID,
+            payment_verified_at=timezone.now(),
+            payment_verified_by=self.owner,
+        )
+        self.client.force_login(self.owner)
+
+        response = self.client.get(reverse('owner_dashboard'))
+
+        self.assertContains(response, 'Cancel Booking')
+        self.assertContains(
+            response,
+            reverse('owner_cancel_booking', kwargs={'booking_id': booking.pk}),
+        )
+        self.assertContains(response, 'Payment was already recorded.')
+
+    def test_other_owner_and_player_cannot_cancel_booking(self):
+        booking = Booking.objects.create(
+            user=self.customer,
+            resource=self.resource,
+            sport=self.sport,
+            start_datetime=timezone.now() + timedelta(days=12),
+            end_datetime=timezone.now() + timedelta(days=12, hours=1),
+            participant_count=2,
+            rate_snapshot=Decimal('200.00'),
+            total_price=Decimal('200.00'),
+        )
+        url = reverse('owner_cancel_booking', kwargs={'booking_id': booking.pk})
+
+        for user in (self.other_owner, self.customer):
+            with self.subTest(user=user):
+                self.client.force_login(user)
+                response = self.client.post(url, {
+                    'cancellation_reason': 'Unauthorized cancellation',
+                })
+                self.assertEqual(response.status_code, 404)
+                booking.refresh_from_db()
+                self.assertEqual(booking.status, Booking.Status.CONFIRMED)
+
+    def test_cancelling_already_cancelled_booking_is_safe(self):
+        cancelled_at = timezone.now()
+        booking = Booking.objects.create(
+            user=self.customer,
+            resource=self.resource,
+            sport=self.sport,
+            start_datetime=timezone.now() + timedelta(days=13),
+            end_datetime=timezone.now() + timedelta(days=13, hours=1),
+            participant_count=2,
+            rate_snapshot=Decimal('200.00'),
+            total_price=Decimal('200.00'),
+            status=Booking.Status.CANCELLED,
+            cancelled_at=cancelled_at,
+            cancellation_reason='Existing cancellation reason',
+        )
+        self.client.force_login(self.owner)
+
+        response = self.client.post(
+            reverse('owner_cancel_booking', kwargs={'booking_id': booking.pk}),
+            {'cancellation_reason': 'Replacement reason'},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'This reservation is already cancelled.')
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CANCELLED)
+        self.assertEqual(booking.cancelled_at, cancelled_at)
+        self.assertEqual(
+            booking.cancellation_reason,
+            'Existing cancellation reason',
+        )
+
     def test_admin_commission_collection_ledger_tracks_verified_payments(self):
         booking = Booking.objects.create(
             user=self.customer,

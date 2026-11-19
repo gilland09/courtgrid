@@ -1,5 +1,9 @@
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
 from django.db import transaction
+from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
+from django.views.decorators.http import require_POST
 from rest_framework import status
 from rest_framework.exceptions import APIException, NotFound, ValidationError
 from rest_framework.generics import ListAPIView, RetrieveAPIView
@@ -15,6 +19,13 @@ from .serializers import (
     BatchCreateBookingSerializer,
     BookingSerializer,
     CreateBookingSerializer,
+)
+
+
+OWNER_CANCELLATION_REASON = 'Cancelled by venue owner'
+PAID_OWNER_CANCELLATION_REASON = (
+    'Cancelled by venue owner after payment was received; '
+    'coordinate any refund directly with the player.'
 )
 
 
@@ -285,3 +296,63 @@ class BookingCancelView(APIView):
             ))
 
         return Response(BookingSerializer(booking).data, status=status.HTTP_200_OK)
+
+
+@login_required
+@require_POST
+def owner_cancel_booking(request, booking_id):
+    booking_scope = Booking.objects.select_for_update().select_related(
+        'resource__facility',
+    )
+    if not request.user.is_superuser:
+        booking_scope = booking_scope.filter(
+            resource__facility__owner=request.user,
+        )
+
+    with transaction.atomic():
+        booking = get_object_or_404(booking_scope, pk=booking_id)
+        if booking.status == Booking.Status.CANCELLED:
+            messages.warning(request, 'This reservation is already cancelled.')
+            return redirect('owner_dashboard')
+        if booking.start_datetime <= timezone.now():
+            messages.error(
+                request,
+                'A reservation cannot be cancelled after it has started.',
+            )
+            return redirect('owner_dashboard')
+
+        submitted_reason = request.POST.get('cancellation_reason', '').strip()
+        was_paid = booking.payment_status == Booking.PaymentStatus.PAID
+        if was_paid:
+            prefix = 'Cancelled by venue owner after payment was received'
+            reason = (
+                f'{prefix}: {submitted_reason}'
+                if submitted_reason
+                else PAID_OWNER_CANCELLATION_REASON
+            )
+        else:
+            reason = submitted_reason or OWNER_CANCELLATION_REASON
+
+        max_reason_length = Booking._meta.get_field(
+            'cancellation_reason',
+        ).max_length
+        booking.status = Booking.Status.CANCELLED
+        booking.cancelled_at = timezone.now()
+        booking.cancellation_reason = reason[:max_reason_length]
+        booking.save(update_fields=(
+            'status',
+            'cancelled_at',
+            'cancellation_reason',
+            'updated_at',
+        ))
+
+    messages.success(
+        request,
+        f'Reservation {booking.payment_reference} was cancelled and its time slot released.',
+    )
+    if was_paid:
+        messages.warning(
+            request,
+            'Payment had already been recorded. Coordinate any refund directly with the player.',
+        )
+    return redirect('owner_dashboard')

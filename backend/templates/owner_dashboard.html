@@ -261,16 +261,64 @@
                             <td>
                                 <span class="payment-receipt-badge {% if booking.payment_status == 'pending' %}payment-pending-badge{% endif %}">{{ booking.get_payment_method_display }} · {{ booking.get_payment_status_display }}</span>
                                 <br><small>Reservation ref: {{ booking.payment_reference }}</small>
-                                {% if booking.payment_status == 'pending' %}
-                                    <form method="post" class="mt-1">
-                                        {% csrf_token %}
-                                        <input type="hidden" name="action" value="verify_payment">
-                                        <input type="hidden" name="booking_id" value="{{ booking.pk }}">
-                                        <button class="btn btn-sm btn-outline-success" type="submit">Mark Payment Received</button>
-                                    </form>
-                                {% elif booking.payment_verified_at %}
-                                    <br><small>Verified {{ booking.payment_verified_at|date:"M j, Y g:i A" }}</small>
-                                {% endif %}
+                                <div class="d-flex flex-wrap gap-1 mt-1">
+                                    {% if booking.payment_status == 'pending' %}
+                                        <form method="post">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="action" value="verify_payment">
+                                            <input type="hidden" name="booking_id" value="{{ booking.pk }}">
+                                            <button class="btn btn-sm btn-outline-success" type="submit">Mark Payment Received</button>
+                                        </form>
+                                    {% elif booking.payment_verified_at %}
+                                        <small class="align-self-center">Verified {{ booking.payment_verified_at|date:"M j, Y g:i A" }}</small>
+                                    {% endif %}
+                                    <button
+                                        class="btn btn-sm btn-outline-danger"
+                                        type="button"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#cancel-owner-booking-{{ booking.pk }}"
+                                    >Cancel Booking</button>
+                                </div>
+                                <div
+                                    class="modal fade text-start"
+                                    id="cancel-owner-booking-{{ booking.pk }}"
+                                    tabindex="-1"
+                                    aria-labelledby="cancel-owner-booking-title-{{ booking.pk }}"
+                                    aria-hidden="true"
+                                >
+                                    <div class="modal-dialog modal-dialog-centered">
+                                        <section class="modal-content booking-modal-content">
+                                            <div class="modal-header border-0 pb-0">
+                                                <h2 class="modal-title h5" id="cancel-owner-booking-title-{{ booking.pk }}">Cancel reservation {{ booking.payment_reference }}?</h2>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                            </div>
+                                            <form method="post" action="{% url 'owner_cancel_booking' booking.pk %}">
+                                                <div class="modal-body">
+                                                    {% csrf_token %}
+                                                    {% if booking.payment_status == 'paid' %}
+                                                        <div class="alert alert-warning" role="alert">
+                                                            Payment was already recorded. Cancelling releases the time slot immediately, and any refund must be coordinated directly with the player.
+                                                        </div>
+                                                    {% endif %}
+                                                    <p class="text-body-secondary">This action immediately releases {{ booking.resource.name }} for {{ booking.start_datetime|date:"M j, Y g:i A" }}.</p>
+                                                    <label class="form-label" for="cancellation-reason-{{ booking.pk }}">Cancellation reason</label>
+                                                    <textarea
+                                                        class="form-control"
+                                                        id="cancellation-reason-{{ booking.pk }}"
+                                                        name="cancellation_reason"
+                                                        maxlength="180"
+                                                        rows="3"
+                                                        placeholder="Optional note for the booking record"
+                                                    ></textarea>
+                                                    <div class="d-flex gap-2 mt-3">
+                                                        <button type="button" class="btn btn-outline-secondary flex-fill" data-bs-dismiss="modal">Keep Booking</button>
+                                                        <button type="submit" class="btn btn-danger flex-fill">Cancel Booking</button>
+                                                    </div>
+                                                </div>
+                                            </form>
+                                        </section>
+                                    </div>
+                                </div>
                             </td>
                         </tr>
                     {% empty %}
