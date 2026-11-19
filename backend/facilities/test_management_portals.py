@@ -4,7 +4,9 @@ import struct
 from tempfile import TemporaryDirectory
 import zlib
 
+from django.contrib.admin.models import CHANGE, LogEntry
 from django.contrib.auth import get_user_model
+from django.contrib.contenttypes.models import ContentType
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.urls import reverse
@@ -668,6 +670,365 @@ class InAppManagementPortalTests(TestCase):
             booking.cancellation_reason,
             'Existing cancellation reason',
         )
+
+    def test_admin_can_cancel_pending_and_paid_bookings_globally(self):
+        pending_booking = Booking.objects.create(
+            user=self.customer,
+            resource=self.resource,
+            sport=self.sport,
+            start_datetime=timezone.now() + timedelta(days=14),
+            end_datetime=timezone.now() + timedelta(days=14, hours=1),
+            participant_count=2,
+            rate_snapshot=Decimal('200.00'),
+            total_price=Decimal('200.00'),
+        )
+        verified_at = timezone.now()
+        paid_booking = Booking.objects.create(
+            user=self.customer,
+            resource=self.other_resource,
+            sport=self.sport,
+            start_datetime=timezone.now() + timedelta(days=15),
+            end_datetime=timezone.now() + timedelta(days=15, hours=1),
+            participant_count=2,
+            rate_snapshot=Decimal('300.00'),
+            total_price=Decimal('300.00'),
+            payment_status=Booking.PaymentStatus.PAID,
+            payment_verified_at=verified_at,
+            payment_verified_by=self.owner,
+        )
+        self.client.force_login(self.admin)
+
+        pending_response = self.client.post(
+            reverse(
+                'admin_cancel_booking',
+                kwargs={'booking_id': pending_booking.pk},
+            ),
+            {'cancellation_reason': '  Schedule conflict  '},
+        )
+        paid_response = self.client.post(
+            reverse(
+                'admin_cancel_booking',
+                kwargs={'booking_id': paid_booking.pk},
+            ),
+            {'cancellation_reason': 'Venue unavailable'},
+        )
+
+        self.assertRedirects(pending_response, reverse('admin_dashboard'))
+        self.assertRedirects(paid_response, reverse('admin_dashboard'))
+        pending_booking.refresh_from_db()
+        paid_booking.refresh_from_db()
+        self.assertEqual(pending_booking.status, Booking.Status.CANCELLED)
+        self.assertEqual(
+            pending_booking.cancellation_reason,
+            'Schedule conflict',
+        )
+        self.assertEqual(paid_booking.status, Booking.Status.CANCELLED)
+        self.assertEqual(
+            paid_booking.cancellation_reason,
+            'Cancelled by platform administrator after payment was received: '
+            'Venue unavailable',
+        )
+        self.assertEqual(
+            paid_booking.payment_status,
+            Booking.PaymentStatus.PAID,
+        )
+        self.assertEqual(paid_booking.payment_verified_at, verified_at)
+        self.assertEqual(paid_booking.payment_verified_by, self.owner)
+
+        from .availability import has_confirmed_booking
+
+        self.assertFalse(has_confirmed_booking(
+            self.resource,
+            pending_booking.start_datetime,
+            pending_booking.end_datetime,
+        ))
+        self.assertFalse(has_confirmed_booking(
+            self.other_resource,
+            paid_booking.start_datetime,
+            paid_booking.end_datetime,
+        ))
+        dashboard = self.client.get(reverse('admin_dashboard'))
+        self.assertEqual(
+            dashboard.context['financial_totals']['gross'],
+            Decimal('0.00'),
+        )
+        self.assertEqual(
+            dashboard.context['financial_totals']['platform_fee'],
+            Decimal('0.00'),
+        )
+        self.assertEqual(
+            dashboard.context['financial_totals']['owner_payout'],
+            Decimal('0.00'),
+        )
+        self.assertEqual(
+            list(dashboard.context['owner_commission_ledger']),
+            [],
+        )
+
+    def test_admin_cancelling_already_cancelled_booking_is_safe(self):
+        cancelled_at = timezone.now()
+        booking = Booking.objects.create(
+            user=self.customer,
+            resource=self.resource,
+            sport=self.sport,
+            start_datetime=timezone.now() + timedelta(days=16),
+            end_datetime=timezone.now() + timedelta(days=16, hours=1),
+            participant_count=2,
+            rate_snapshot=Decimal('200.00'),
+            total_price=Decimal('200.00'),
+            status=Booking.Status.CANCELLED,
+            cancelled_at=cancelled_at,
+            cancellation_reason='Cancelled earlier',
+        )
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse(
+                'admin_cancel_booking',
+                kwargs={'booking_id': booking.pk},
+            ),
+            {'cancellation_reason': 'Overwrite attempt'},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'This reservation is already cancelled.')
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CANCELLED)
+        self.assertEqual(booking.cancelled_at, cancelled_at)
+        self.assertEqual(booking.cancellation_reason, 'Cancelled earlier')
+
+    def test_admin_can_delete_single_log_without_touching_business_records(self):
+        booking = Booking.objects.create(
+            user=self.customer,
+            resource=self.resource,
+            sport=self.sport,
+            start_datetime=timezone.now() + timedelta(days=17),
+            end_datetime=timezone.now() + timedelta(days=17, hours=1),
+            participant_count=2,
+            rate_snapshot=Decimal('200.00'),
+            total_price=Decimal('200.00'),
+        )
+        content_type = ContentType.objects.get_for_model(Booking)
+        first_log = LogEntry.objects.create(
+            user=self.admin,
+            content_type=content_type,
+            object_id=str(booking.pk),
+            object_repr=str(booking),
+            action_flag=CHANGE,
+            change_message='First test log',
+        )
+        retained_log = LogEntry.objects.create(
+            user=self.admin,
+            content_type=content_type,
+            object_id=str(booking.pk),
+            object_repr=str(booking),
+            action_flag=CHANGE,
+            change_message='Second test log',
+        )
+        user_count = get_user_model().objects.count()
+        facility_count = Facility.objects.count()
+        booking_count = Booking.objects.count()
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse('admin_delete_log', kwargs={'log_id': first_log.pk}),
+        )
+
+        self.assertRedirects(response, reverse('admin_dashboard'))
+        self.assertFalse(LogEntry.objects.filter(pk=first_log.pk).exists())
+        self.assertTrue(LogEntry.objects.filter(pk=retained_log.pk).exists())
+        self.assertEqual(get_user_model().objects.count(), user_count)
+        self.assertEqual(Facility.objects.count(), facility_count)
+        self.assertEqual(Booking.objects.count(), booking_count)
+
+    def test_admin_can_delete_all_logs_and_repeat_when_empty(self):
+        content_type = ContentType.objects.get_for_model(Facility)
+        LogEntry.objects.create(
+            user=self.admin,
+            content_type=content_type,
+            object_id=str(self.facility.pk),
+            object_repr=str(self.facility),
+            action_flag=CHANGE,
+            change_message='Facility log',
+        )
+        LogEntry.objects.create(
+            user=self.admin,
+            content_type=content_type,
+            object_id=str(self.other_facility.pk),
+            object_repr=str(self.other_facility),
+            action_flag=CHANGE,
+            change_message='Other facility log',
+        )
+        user_count = get_user_model().objects.count()
+        facility_count = Facility.objects.count()
+        booking_count = Booking.objects.count()
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse('admin_delete_all_logs'),
+            follow=True,
+        )
+        empty_response = self.client.post(
+            reverse('admin_delete_all_logs'),
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '2 log entries permanently deleted.')
+        self.assertEqual(empty_response.status_code, 200)
+        self.assertContains(empty_response, 'There are no log entries to delete.')
+        self.assertFalse(LogEntry.objects.exists())
+        self.assertEqual(get_user_model().objects.count(), user_count)
+        self.assertEqual(Facility.objects.count(), facility_count)
+        self.assertEqual(Booking.objects.count(), booking_count)
+
+    def test_non_admins_cannot_use_admin_booking_or_log_endpoints(self):
+        booking = Booking.objects.create(
+            user=self.customer,
+            resource=self.resource,
+            sport=self.sport,
+            start_datetime=timezone.now() + timedelta(days=18),
+            end_datetime=timezone.now() + timedelta(days=18, hours=1),
+            participant_count=2,
+            rate_snapshot=Decimal('200.00'),
+            total_price=Decimal('200.00'),
+        )
+        log_entry = LogEntry.objects.create(
+            user=self.admin,
+            content_type=ContentType.objects.get_for_model(Booking),
+            object_id=str(booking.pk),
+            object_repr=str(booking),
+            action_flag=CHANGE,
+            change_message='Protected log',
+        )
+        urls = (
+            (
+                reverse(
+                    'admin_cancel_booking',
+                    kwargs={'booking_id': booking.pk},
+                ),
+                {},
+            ),
+            (
+                reverse(
+                    'admin_delete_log',
+                    kwargs={'log_id': log_entry.pk},
+                ),
+                {},
+            ),
+            (reverse('admin_delete_all_logs'), {}),
+        )
+
+        for user in (self.owner, self.customer):
+            self.client.force_login(user)
+            for url, payload in urls:
+                with self.subTest(user=user, url=url):
+                    response = self.client.post(url, payload)
+                    self.assertEqual(response.status_code, 403)
+
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CONFIRMED)
+        self.assertTrue(LogEntry.objects.filter(pk=log_entry.pk).exists())
+
+    def test_admin_destructive_endpoints_reject_get_requests(self):
+        booking = Booking.objects.create(
+            user=self.customer,
+            resource=self.resource,
+            sport=self.sport,
+            start_datetime=timezone.now() + timedelta(days=19),
+            end_datetime=timezone.now() + timedelta(days=19, hours=1),
+            participant_count=2,
+            rate_snapshot=Decimal('200.00'),
+            total_price=Decimal('200.00'),
+        )
+        log_entry = LogEntry.objects.create(
+            user=self.admin,
+            content_type=ContentType.objects.get_for_model(Booking),
+            object_id=str(booking.pk),
+            object_repr=str(booking),
+            action_flag=CHANGE,
+            change_message='Method safety log',
+        )
+        self.client.force_login(self.admin)
+
+        urls = (
+            reverse(
+                'admin_cancel_booking',
+                kwargs={'booking_id': booking.pk},
+            ),
+            reverse('admin_delete_log', kwargs={'log_id': log_entry.pk}),
+            reverse('admin_delete_all_logs'),
+        )
+        for url in urls:
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url).status_code, 405)
+
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CONFIRMED)
+        self.assertTrue(LogEntry.objects.filter(pk=log_entry.pk).exists())
+
+    def test_admin_dashboard_renders_booking_and_log_management_controls(self):
+        pending_booking = Booking.objects.create(
+            user=self.customer,
+            resource=self.resource,
+            sport=self.sport,
+            start_datetime=timezone.now() + timedelta(days=20),
+            end_datetime=timezone.now() + timedelta(days=20, hours=1),
+            participant_count=2,
+            rate_snapshot=Decimal('200.00'),
+            total_price=Decimal('200.00'),
+        )
+        paid_booking = Booking.objects.create(
+            user=self.customer,
+            resource=self.other_resource,
+            sport=self.sport,
+            start_datetime=timezone.now() + timedelta(days=21),
+            end_datetime=timezone.now() + timedelta(days=21, hours=1),
+            participant_count=2,
+            rate_snapshot=Decimal('300.00'),
+            total_price=Decimal('300.00'),
+            payment_status=Booking.PaymentStatus.PAID,
+            payment_verified_at=timezone.now(),
+            payment_verified_by=self.admin,
+        )
+        log_entry = LogEntry.objects.create(
+            user=self.admin,
+            content_type=ContentType.objects.get_for_model(Facility),
+            object_id=str(self.facility.pk),
+            object_repr=str(self.facility),
+            action_flag=CHANGE,
+            change_message='Template rendering log',
+        )
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse('admin_dashboard'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Cancel Booking')
+        self.assertContains(response, 'Payment was already recorded.')
+        self.assertContains(
+            response,
+            reverse(
+                'admin_cancel_booking',
+                kwargs={'booking_id': pending_booking.pk},
+            ),
+        )
+        self.assertContains(
+            response,
+            reverse(
+                'admin_cancel_booking',
+                kwargs={'booking_id': paid_booking.pk},
+            ),
+        )
+        self.assertContains(response, 'Delete Log')
+        self.assertContains(response, 'Delete All Logs')
+        self.assertContains(
+            response,
+            reverse('admin_delete_log', kwargs={'log_id': log_entry.pk}),
+        )
+        self.assertContains(response, reverse('admin_delete_all_logs'))
+        self.assertContains(response, 'id="delete-all-admin-logs"')
 
     def test_admin_commission_collection_ledger_tracks_verified_payments(self):
         booking = Booking.objects.create(

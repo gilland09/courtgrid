@@ -152,14 +152,62 @@
                             <td>
                                 <span class="payment-receipt-badge {% if booking.payment_status == 'pending' %}payment-pending-badge{% endif %}">{{ booking.get_payment_method_display }} · {{ booking.get_payment_status_display }}</span>
                                 <br>Reservation ref: {{ booking.payment_reference }}
-                                {% if booking.payment_status == 'pending' %}
-                                    <form method="post" class="mt-1">
-                                        {% csrf_token %}
-                                        <input type="hidden" name="action" value="verify_payment">
-                                        <input type="hidden" name="booking_id" value="{{ booking.pk }}">
-                                        <button class="btn btn-sm btn-outline-success" type="submit">Verify Venue Payment</button>
-                                    </form>
-                                {% endif %}
+                                <div class="d-flex flex-wrap gap-1 mt-1">
+                                    {% if booking.payment_status == 'pending' %}
+                                        <form method="post">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="action" value="verify_payment">
+                                            <input type="hidden" name="booking_id" value="{{ booking.pk }}">
+                                            <button class="btn btn-sm btn-outline-success" type="submit">Verify Venue Payment</button>
+                                        </form>
+                                    {% endif %}
+                                    <button
+                                        class="btn btn-sm btn-outline-danger"
+                                        type="button"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#cancel-admin-booking-{{ booking.pk }}"
+                                    >Cancel Booking</button>
+                                </div>
+                                <div
+                                    class="modal fade text-start"
+                                    id="cancel-admin-booking-{{ booking.pk }}"
+                                    tabindex="-1"
+                                    aria-labelledby="cancel-admin-booking-title-{{ booking.pk }}"
+                                    aria-hidden="true"
+                                >
+                                    <div class="modal-dialog modal-dialog-centered">
+                                        <section class="modal-content booking-modal-content">
+                                            <div class="modal-header border-0 pb-0">
+                                                <h2 class="modal-title h5" id="cancel-admin-booking-title-{{ booking.pk }}">Cancel reservation {{ booking.payment_reference }}?</h2>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                            </div>
+                                            <form method="post" action="{% url 'admin_cancel_booking' booking.pk %}">
+                                                <div class="modal-body">
+                                                    {% csrf_token %}
+                                                    {% if booking.payment_status == 'paid' %}
+                                                        <div class="alert alert-warning" role="alert">
+                                                            Payment was already recorded. Cancelling releases the time slot immediately, and any refund must be coordinated with the facility owner and player.
+                                                        </div>
+                                                    {% endif %}
+                                                    <p class="text-body-secondary">This action immediately releases {{ booking.resource.facility.name }} / {{ booking.resource.name }} for {{ booking.start_datetime|date:"M j, Y g:i A" }}.</p>
+                                                    <label class="form-label" for="admin-cancellation-reason-{{ booking.pk }}">Cancellation reason</label>
+                                                    <textarea
+                                                        class="form-control"
+                                                        id="admin-cancellation-reason-{{ booking.pk }}"
+                                                        name="cancellation_reason"
+                                                        maxlength="180"
+                                                        rows="3"
+                                                        placeholder="Optional administrative note"
+                                                    ></textarea>
+                                                    <div class="d-flex gap-2 mt-3">
+                                                        <button type="button" class="btn btn-outline-secondary flex-fill" data-bs-dismiss="modal">Keep Booking</button>
+                                                        <button type="submit" class="btn btn-danger flex-fill">Cancel Booking</button>
+                                                    </div>
+                                                </div>
+                                            </form>
+                                        </section>
+                                    </div>
+                                </div>
                             </td>
                         </tr>
                     {% empty %}
@@ -194,6 +242,109 @@
         </div>
     </div>
 </section>
+
+<section class="card hover-lift mb-4" aria-labelledby="admin-logs-heading">
+    <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+            <div>
+                <h2 id="admin-logs-heading" class="h4 mb-1">Administration Logs</h2>
+                <p class="small text-body-secondary mb-0">Django admin actions recorded for administrative review.</p>
+            </div>
+            {% if admin_logs %}
+                <button
+                    class="btn btn-sm btn-outline-danger"
+                    type="button"
+                    data-bs-toggle="modal"
+                    data-bs-target="#delete-all-admin-logs"
+                >Delete All Logs</button>
+            {% endif %}
+        </div>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Time</th><th>Administrator</th><th>Action</th><th>Object</th><th>Log Management</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in admin_logs %}
+                        <tr>
+                            <td>{{ log.action_time|date:"M j, Y g:i A" }}</td>
+                            <td>{{ log.user.get_username }}</td>
+                            <td>{{ log }}</td>
+                            <td>{{ log.object_repr|default:"—" }}</td>
+                            <td>
+                                <button
+                                    class="btn btn-sm btn-outline-danger"
+                                    type="button"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#delete-admin-log-{{ log.pk }}"
+                                >Delete Log</button>
+                                <div
+                                    class="modal fade text-start"
+                                    id="delete-admin-log-{{ log.pk }}"
+                                    tabindex="-1"
+                                    aria-labelledby="delete-admin-log-title-{{ log.pk }}"
+                                    aria-hidden="true"
+                                >
+                                    <div class="modal-dialog modal-dialog-centered">
+                                        <section class="modal-content booking-modal-content">
+                                            <div class="modal-header border-0 pb-0">
+                                                <h2 class="modal-title h5" id="delete-admin-log-title-{{ log.pk }}">Delete this log entry?</h2>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                            </div>
+                                            <form method="post" action="{% url 'admin_delete_log' log.pk %}">
+                                                <div class="modal-body">
+                                                    {% csrf_token %}
+                                                    <p class="text-body-secondary mb-0">Only this administrative log entry will be permanently removed. Users and business records are not affected.</p>
+                                                    <div class="d-flex gap-2 mt-3">
+                                                        <button type="button" class="btn btn-outline-secondary flex-fill" data-bs-dismiss="modal">Keep Log</button>
+                                                        <button type="submit" class="btn btn-danger flex-fill">Delete Log</button>
+                                                    </div>
+                                                </div>
+                                            </form>
+                                        </section>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="5" class="text-body-secondary">No administration log entries.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+{% if admin_logs %}
+<div
+    class="modal fade"
+    id="delete-all-admin-logs"
+    tabindex="-1"
+    aria-labelledby="delete-all-admin-logs-title"
+    aria-hidden="true"
+>
+    <div class="modal-dialog modal-dialog-centered">
+        <section class="modal-content booking-modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h2 class="modal-title h5" id="delete-all-admin-logs-title">Permanently delete all logs?</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" action="{% url 'admin_delete_all_logs' %}">
+                <div class="modal-body">
+                    {% csrf_token %}
+                    <div class="alert alert-danger" role="alert">This irreversible action permanently removes every Django administration log entry. Users, facilities, and bookings are not deleted.</div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-outline-secondary flex-fill" data-bs-dismiss="modal">Keep Logs</button>
+                        <button type="submit" class="btn btn-danger flex-fill">Delete All Logs</button>
+                    </div>
+                </div>
+            </form>
+        </section>
+    </div>
+</div>
+{% endif %}
 
 <section class="card hover-lift mb-4" aria-labelledby="active-closures-heading">
     <div class="card-body">

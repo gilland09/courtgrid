@@ -27,7 +27,10 @@ from facilities.management_views import (
 from facilities.views import facility_detail_view
 
 from .views import (
+    admin_cancel_booking,
     admin_dashboard_view,
+    admin_delete_all_logs,
+    admin_delete_log,
     home_view,
     login_view,
     logout_view,
@@ -52,6 +55,21 @@ urlpatterns = [
         'admin-dashboard/commissions/<int:booking_id>/settle/',
         settle_commission_view,
         name='settle_commission',
+    ),
+    path(
+        'admin-dashboard/bookings/<int:booking_id>/cancel/',
+        admin_cancel_booking,
+        name='admin_cancel_booking',
+    ),
+    path(
+        'admin-dashboard/logs/<int:log_id>/delete/',
+        admin_delete_log,
+        name='admin_delete_log',
+    ),
+    path(
+        'admin-dashboard/logs/delete-all/',
+        admin_delete_all_logs,
+        name='admin_delete_all_logs',
     ),
     path('owner/dashboard/', owner_dashboard_view, name='owner_dashboard'),
     path('management/facilities/', management_facilities_view, name='management_facilities'),

@@ -1,11 +1,13 @@
 from decimal import Decimal
 
 from django.contrib import messages
+from django.contrib.admin.models import LogEntry
 from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth import login as auth_login
 from django.contrib.auth import logout as auth_logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import AuthenticationForm
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
@@ -236,6 +238,10 @@ def admin_dashboard_view(request):
         'all_bookings': visible_bookings,
         'settlement_status': settlement_status,
         'owner_commission_ledger': owner_commission_ledger,
+        'admin_logs': LogEntry.objects.select_related(
+            'user',
+            'content_type',
+        ).order_by('-action_time', '-pk'),
         'financial_totals': {
             key: value or Decimal('0.00')
             for key, value in financial_totals.items()
@@ -252,6 +258,108 @@ def admin_dashboard_view(request):
             facility__verification_status=Facility.VerificationStatus.VERIFIED,
         ).count(),
     })
+
+
+@login_required(login_url='login')
+@require_POST
+def admin_cancel_booking(request, booking_id):
+    if get_user_role(request.user) != UserProfile.Role.ADMIN:
+        raise PermissionDenied
+
+    with transaction.atomic():
+        booking = get_object_or_404(
+            Booking.objects.select_for_update(),
+            pk=booking_id,
+        )
+        if booking.status == Booking.Status.CANCELLED:
+            messages.warning(request, 'This reservation is already cancelled.')
+            return redirect('admin_dashboard')
+        if booking.start_datetime <= timezone.now():
+            messages.error(
+                request,
+                'A reservation cannot be cancelled after it has started.',
+            )
+            return redirect('admin_dashboard')
+
+        submitted_reason = request.POST.get('cancellation_reason', '').strip()
+        was_paid = booking.payment_status == Booking.PaymentStatus.PAID
+        if was_paid:
+            prefix = 'Cancelled by platform administrator after payment was received'
+            reason = (
+                f'{prefix}: {submitted_reason}'
+                if submitted_reason
+                else (
+                    f'{prefix}; coordinate any refund with the facility owner '
+                    'and player.'
+                )
+            )
+        else:
+            reason = submitted_reason or 'Cancelled by platform administrator'
+
+        max_reason_length = Booking._meta.get_field(
+            'cancellation_reason',
+        ).max_length
+        booking.status = Booking.Status.CANCELLED
+        booking.cancelled_at = timezone.now()
+        booking.cancellation_reason = reason[:max_reason_length]
+        booking.save(update_fields=(
+            'status',
+            'cancelled_at',
+            'cancellation_reason',
+            'updated_at',
+        ))
+
+    messages.success(
+        request,
+        f'Reservation {booking.payment_reference} was cancelled and its time slot released.',
+    )
+    if was_paid:
+        messages.warning(
+            request,
+            'Payment had already been recorded. Coordinate any refund with the facility owner and player.',
+        )
+    return redirect('admin_dashboard')
+
+
+@login_required(login_url='login')
+@require_POST
+def admin_delete_log(request, log_id):
+    if get_user_role(request.user) != UserProfile.Role.ADMIN:
+        raise PermissionDenied
+
+    with transaction.atomic():
+        log_entry = get_object_or_404(
+            LogEntry.objects.select_for_update(),
+            pk=log_id,
+        )
+        log_entry.delete()
+
+    messages.success(request, 'The log entry was permanently deleted.')
+    return redirect('admin_dashboard')
+
+
+@login_required(login_url='login')
+@require_POST
+def admin_delete_all_logs(request):
+    if get_user_role(request.user) != UserProfile.Role.ADMIN:
+        raise PermissionDenied
+
+    with transaction.atomic():
+        log_ids = list(
+            LogEntry.objects.select_for_update().values_list('pk', flat=True),
+        )
+        deleted_count = len(log_ids)
+        if log_ids:
+            LogEntry.objects.filter(pk__in=log_ids).delete()
+
+    if deleted_count:
+        messages.success(
+            request,
+            f'{deleted_count} log entr{"y" if deleted_count == 1 else "ies"} permanently deleted.',
+        )
+    else:
+        messages.info(request, 'There are no log entries to delete.')
+    return redirect('admin_dashboard')
 
 
 @user_passes_test(
