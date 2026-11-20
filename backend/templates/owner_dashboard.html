@@ -230,15 +230,49 @@
     </div>
 </section>
 
-<section class="card">
+<section class="card" data-booking-panel>
     <div class="card-body">
-        <h2 class="h4">Venue bookings</h2>
-        <div class="table-responsive">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <h2 class="h4 mb-0">Venue bookings</h2>
+            <span class="small text-body-secondary" data-booking-count aria-live="polite">Showing 0 of 0 bookings</span>
+        </div>
+        <div class="booking-panel-toolbar mb-3">
+            <div>
+                <label class="form-label mb-1" for="owner-booking-search">Search bookings</label>
+                <input
+                    class="form-control"
+                    id="owner-booking-search"
+                    type="search"
+                    placeholder="Receipt, player, venue, court, or date"
+                    data-booking-search
+                >
+            </div>
+            <div>
+                <label class="form-label mb-1" for="owner-booking-status">Booking status</label>
+                <select class="form-select" id="owner-booking-status" data-booking-status-filter>
+                    <option value="all">All bookings</option>
+                    <option value="pending">Pending Payment</option>
+                    <option value="paid">Payment Received / Paid</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+            </div>
+            <div class="form-check align-self-center mt-4">
+                <input class="form-check-input" id="owner-active-queue" type="checkbox" data-booking-active-only checked>
+                <label class="form-check-label" for="owner-active-queue">Active Queue Only</label>
+            </div>
+        </div>
+        <div class="booking-table-scroll">
             <table class="table table-striped align-middle">
                 <thead><tr><th>Facility / Court</th><th>Sport</th><th>Date & time</th><th>Customer</th><th>Contact</th><th>Players</th><th>Roster</th><th>Direct Collection (100%)</th><th>5% Commission Payable</th><th>95% Retained</th><th>Payment Status / Reference</th></tr></thead>
                 <tbody>
                     {% for booking in venue_bookings %}
-                        <tr>
+                        <tr
+                            data-booking-row
+                            data-booking-status="{{ booking.status }}"
+                            data-payment-status="{{ booking.payment_status }}"
+                            data-start-datetime="{{ booking.start_datetime.isoformat }}"
+                            data-booking-search="{{ booking.payment_reference }} {{ booking.user.get_username }} {{ booking.user.get_full_name }} {{ booking.resource.facility.name }} {{ booking.resource.name }} {{ booking.start_datetime|date:'Y-m-d M j, Y g:i A' }}"
+                        >
                             <td>{{ booking.resource.facility.name }} / {{ booking.resource.name }}</td>
                             <td>{{ booking.sport.name }}</td>
                             <td>{{ booking.start_datetime|date:"M j, Y g:i A" }}–{{ booking.end_datetime|date:"g:i A" }}</td>
@@ -250,6 +284,8 @@
                             <td>
                                 {% if booking.platform_fee_collected %}
                                     <span class="badge text-bg-success">Commission Settled · Paid to Admin</span>
+                                {% elif booking.status == 'CANCELLED' %}
+                                    <span class="badge text-bg-secondary">Cancelled · excluded from totals</span>
                                 {% elif booking.payment_status == 'paid' %}
                                     <span class="badge text-bg-warning">5% Commission Payable to Admin (Pending)</span>
                                     <br>₱{{ booking.platform_fee_amount }}
@@ -262,7 +298,7 @@
                                 <span class="payment-receipt-badge {% if booking.payment_status == 'pending' %}payment-pending-badge{% endif %}">{{ booking.get_payment_method_display }} · {{ booking.get_payment_status_display }}</span>
                                 <br><small>Reservation ref: {{ booking.payment_reference }}</small>
                                 <div class="d-flex flex-wrap gap-1 mt-1">
-                                    {% if booking.payment_status == 'pending' %}
+                                    {% if booking.status == 'CONFIRMED' and booking.payment_status == 'pending' %}
                                         <form method="post">
                                             {% csrf_token %}
                                             <input type="hidden" name="action" value="verify_payment">
@@ -272,61 +308,120 @@
                                     {% elif booking.payment_verified_at %}
                                         <small class="align-self-center">Verified {{ booking.payment_verified_at|date:"M j, Y g:i A" }}</small>
                                     {% endif %}
-                                    <button
-                                        class="btn btn-sm btn-outline-danger"
-                                        type="button"
-                                        data-bs-toggle="modal"
-                                        data-bs-target="#cancel-owner-booking-{{ booking.pk }}"
-                                    >Cancel Booking</button>
-                                </div>
-                                <div
-                                    class="modal fade text-start"
-                                    id="cancel-owner-booking-{{ booking.pk }}"
-                                    tabindex="-1"
-                                    aria-labelledby="cancel-owner-booking-title-{{ booking.pk }}"
-                                    aria-hidden="true"
-                                >
-                                    <div class="modal-dialog modal-dialog-centered">
-                                        <section class="modal-content booking-modal-content">
-                                            <div class="modal-header border-0 pb-0">
-                                                <h2 class="modal-title h5" id="cancel-owner-booking-title-{{ booking.pk }}">Cancel reservation {{ booking.payment_reference }}?</h2>
-                                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                                            </div>
-                                            <form method="post" action="{% url 'owner_cancel_booking' booking.pk %}">
-                                                <div class="modal-body">
-                                                    {% csrf_token %}
-                                                    {% if booking.payment_status == 'paid' %}
-                                                        <div class="alert alert-warning" role="alert">
-                                                            Payment was already recorded. Cancelling releases the time slot immediately, and any refund must be coordinated directly with the player.
-                                                        </div>
-                                                    {% endif %}
-                                                    <p class="text-body-secondary">This action immediately releases {{ booking.resource.name }} for {{ booking.start_datetime|date:"M j, Y g:i A" }}.</p>
-                                                    <label class="form-label" for="cancellation-reason-{{ booking.pk }}">Cancellation reason</label>
-                                                    <textarea
-                                                        class="form-control"
-                                                        id="cancellation-reason-{{ booking.pk }}"
-                                                        name="cancellation_reason"
-                                                        maxlength="180"
-                                                        rows="3"
-                                                        placeholder="Optional note for the booking record"
-                                                    ></textarea>
-                                                    <div class="d-flex gap-2 mt-3">
-                                                        <button type="button" class="btn btn-outline-secondary flex-fill" data-bs-dismiss="modal">Keep Booking</button>
-                                                        <button type="submit" class="btn btn-danger flex-fill">Cancel Booking</button>
-                                                    </div>
-                                                </div>
-                                            </form>
-                                        </section>
-                                    </div>
+                                    {% if booking.status == 'CONFIRMED' %}
+                                        <button
+                                            class="btn btn-sm btn-outline-danger owner-booking-cancel-trigger"
+                                            type="button"
+                                            data-booking-reference="{{ booking.payment_reference }}"
+                                            data-booking-player="{{ booking.user.get_username }}"
+                                            data-booking-venue="{{ booking.resource.facility.name }} / {{ booking.resource.name }}"
+                                            data-booking-slot="{{ booking.start_datetime|date:'M j, Y g:i A' }}–{{ booking.end_datetime|date:'g:i A' }}"
+                                            data-booking-paid="{% if booking.payment_status == 'paid' %}true{% else %}false{% endif %}"
+                                            data-cancel-url="{% url 'owner_cancel_booking' booking.pk %}"
+                                        >Cancel Booking</button>
+                                    {% else %}
+                                        <span class="badge text-bg-secondary mt-1">Cancelled</span>
+                                        {% if booking.cancellation_reason %}
+                                            <small class="d-block mt-1">{{ booking.cancellation_reason }}</small>
+                                        {% endif %}
+                                    {% endif %}
                                 </div>
                             </td>
                         </tr>
                     {% empty %}
-                        <tr><td colspan="11" class="text-body-secondary">No confirmed venue bookings.</td></tr>
+                        <tr data-booking-empty><td colspan="11" class="text-body-secondary">No venue booking history.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
     </div>
 </section>
+{% endblock %}
+
+{% block modals %}
+<div
+    class="modal fade courtgrid-cancel-modal text-start"
+    id="owner-cancel-booking-modal"
+    tabindex="-1"
+    aria-labelledby="owner-cancel-booking-title"
+    aria-hidden="true"
+>
+    <div class="modal-dialog modal-dialog-centered">
+        <section class="modal-content booking-modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h2 class="modal-title h5" id="owner-cancel-booking-title">Cancel booking?</h2>
+                <button type="button" class="btn-close owner-cancel-close" aria-label="Close"></button>
+            </div>
+            <form method="post" id="owner-cancel-booking-form">
+                <div class="modal-body">
+                    {% csrf_token %}
+                    <div class="alert alert-warning d-none" id="owner-cancel-paid-warning" role="alert">
+                        Payment was already recorded. Cancelling releases the time slot immediately, and any refund must be coordinated directly with the player.
+                    </div>
+                    <dl class="row small mb-3">
+                        <dt class="col-4">Reservation</dt><dd class="col-8" id="owner-cancel-reference"></dd>
+                        <dt class="col-4">Player</dt><dd class="col-8" id="owner-cancel-player"></dd>
+                        <dt class="col-4">Venue</dt><dd class="col-8" id="owner-cancel-venue"></dd>
+                        <dt class="col-4">Slot</dt><dd class="col-8" id="owner-cancel-slot"></dd>
+                    </dl>
+                    <p class="text-body-secondary">This action immediately releases the selected time slot.</p>
+                    <label class="form-label" for="owner-cancellation-reason">Cancellation reason</label>
+                    <textarea class="form-control" id="owner-cancellation-reason" name="cancellation_reason" maxlength="180" rows="3" placeholder="Optional note for the booking record"></textarea>
+                    <div class="d-flex gap-2 mt-3">
+                        <button type="button" class="btn btn-outline-secondary flex-fill owner-cancel-close">Keep Booking</button>
+                        <button type="submit" class="btn btn-danger flex-fill">Cancel Booking</button>
+                    </div>
+                </div>
+            </form>
+        </section>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+    const modalElement = document.getElementById('owner-cancel-booking-modal');
+    if (!modalElement) return;
+    const modal = bootstrap.Modal.getOrCreateInstance(modalElement, {
+        backdrop: true,
+        keyboard: true,
+    });
+    const form = document.getElementById('owner-cancel-booking-form');
+    const warning = document.getElementById('owner-cancel-paid-warning');
+    const hideModal = () => {
+        modal.hide();
+        document.body.classList.remove('courtgrid-cancel-modal-open');
+    };
+    document.querySelectorAll('.owner-booking-cancel-trigger').forEach((button) => {
+        button.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const data = button.dataset;
+            form.action = data.cancelUrl;
+            document.getElementById('owner-cancel-reference').textContent = data.bookingReference;
+            document.getElementById('owner-cancel-player').textContent = data.bookingPlayer;
+            document.getElementById('owner-cancel-venue').textContent = data.bookingVenue;
+            document.getElementById('owner-cancel-slot').textContent = data.bookingSlot;
+            warning.classList.toggle('d-none', data.bookingPaid !== 'true');
+            form.elements.cancellation_reason.value = '';
+            document.body.classList.add('courtgrid-cancel-modal-open');
+            modal.show();
+        });
+    });
+    modalElement.querySelectorAll('.owner-cancel-close').forEach((button) => {
+        button.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            hideModal();
+        });
+    });
+    modalElement.addEventListener('click', (event) => {
+        if (event.target === modalElement) hideModal();
+    });
+    modalElement.addEventListener('hidden.bs.modal', () => {
+        document.body.classList.remove('courtgrid-cancel-modal-open');
+    });
+})();
+</script>
 {% endblock %}

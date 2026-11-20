@@ -584,7 +584,8 @@ class InAppManagementPortalTests(TestCase):
             'Cancelled by venue owner after payment was received: Facility maintenance',
         )
         dashboard = self.client.get(reverse('owner_dashboard'))
-        self.assertNotContains(dashboard, booking.payment_reference)
+        self.assertContains(dashboard, booking.payment_reference)
+        self.assertContains(dashboard, 'Cancelled · excluded from totals')
         self.assertEqual(
             dashboard.context['financial_totals']['owner_payout'],
             Decimal('0.00'),
@@ -1007,18 +1008,39 @@ class InAppManagementPortalTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Cancel Booking')
         self.assertContains(response, 'Payment was already recorded.')
+        self.assertContains(response, 'id="admin-cancel-booking-modal"')
+        self.assertContains(response, 'id="admin-cancel-booking-form"')
+        self.assertContains(response, 'admin-cancel-paid-warning')
+        self.assertContains(response, 'booking-table-scroll')
+        self.assertContains(response, 'overscroll-behavior: contain')
+        self.assertContains(response, 'data-booking-search')
+        self.assertContains(response, 'data-booking-status-filter')
+        self.assertContains(response, 'data-booking-active-only')
+        self.assertContains(response, 'data-booking-count')
+        self.assertContains(response, 'admin-booking-cancel-trigger')
+        self.assertContains(response, 'event.preventDefault()')
+        self.assertContains(response, 'event.stopPropagation()')
+        self.assertContains(response, 'form.action = data.cancelUrl;')
         self.assertContains(
             response,
-            reverse(
+            (
+                'data-cancel-url="'
+                + reverse(
                 'admin_cancel_booking',
                 kwargs={'booking_id': pending_booking.pk},
+                )
+                + '"'
             ),
         )
         self.assertContains(
             response,
-            reverse(
+            (
+                'data-cancel-url="'
+                + reverse(
                 'admin_cancel_booking',
                 kwargs={'booking_id': paid_booking.pk},
+                )
+                + '"'
             ),
         )
         self.assertContains(response, 'Delete Log')
@@ -1029,6 +1051,70 @@ class InAppManagementPortalTests(TestCase):
         )
         self.assertContains(response, reverse('admin_delete_all_logs'))
         self.assertContains(response, 'id="delete-all-admin-logs"')
+        html = response.content.decode()
+        self.assertLess(
+            html.index('</main>'),
+            html.index('id="admin-cancel-booking-modal"'),
+        )
+        modal_start = html.index('id="admin-cancel-booking-modal"')
+        modal_end = html.index('id="admin-cancel-paid-warning"', modal_start)
+        self.assertIn('name="csrfmiddlewaretoken"', html[modal_start:modal_end])
+        self.assertNotIn(
+            'hover-lift mb-4" aria-labelledby="master-bookings-heading"',
+            html,
+        )
+
+    def test_owner_dashboard_renders_isolated_booking_history_controls(self):
+        pending_booking = Booking.objects.create(
+            user=self.customer,
+            resource=self.resource,
+            sport=self.sport,
+            start_datetime=timezone.now() + timedelta(days=22),
+            end_datetime=timezone.now() + timedelta(days=22, hours=1),
+            participant_count=2,
+            rate_snapshot=Decimal('200.00'),
+            total_price=Decimal('200.00'),
+        )
+        Booking.objects.create(
+            user=self.customer,
+            resource=self.resource,
+            sport=self.sport,
+            start_datetime=timezone.now() + timedelta(days=23),
+            end_datetime=timezone.now() + timedelta(days=23, hours=1),
+            participant_count=2,
+            rate_snapshot=Decimal('200.00'),
+            total_price=Decimal('200.00'),
+            status=Booking.Status.CANCELLED,
+            cancellation_reason='Owner historical cancellation',
+        )
+        self.client.force_login(self.owner)
+
+        response = self.client.get(reverse('owner_dashboard'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'booking-table-scroll')
+        self.assertContains(response, 'overscroll-behavior: contain')
+        self.assertContains(response, 'id="owner-booking-search"')
+        self.assertContains(response, 'data-booking-status-filter')
+        self.assertContains(response, 'data-booking-active-only')
+        self.assertContains(response, 'data-booking-count')
+        self.assertContains(response, 'Pending Payment')
+        self.assertContains(response, 'Payment Received / Paid')
+        self.assertContains(response, 'Cancelled')
+        self.assertContains(response, pending_booking.payment_reference)
+        self.assertContains(response, 'Owner historical cancellation')
+        self.assertContains(response, 'id="owner-cancel-booking-modal"')
+        self.assertContains(
+            response,
+            (
+                'data-cancel-url="'
+                + reverse(
+                    'owner_cancel_booking',
+                    kwargs={'booking_id': pending_booking.pk},
+                )
+                + '"'
+            ),
+        )
 
     def test_admin_commission_collection_ledger_tracks_verified_payments(self):
         booking = Booking.objects.create(
