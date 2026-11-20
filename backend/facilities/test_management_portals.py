@@ -1,6 +1,10 @@
 from datetime import time, timedelta
 from decimal import Decimal
+from pathlib import Path
+import re
+import shutil
 import struct
+import subprocess
 from tempfile import TemporaryDirectory
 import zlib
 
@@ -23,6 +27,33 @@ from .models import (
     ResourceSport,
     Sport,
 )
+
+
+def assert_rendered_scripts_parse(test_case, rendered_html):
+    node = shutil.which('node')
+    if node is None:
+        test_case.skipTest('Node is required to validate rendered JavaScript syntax.')
+    scripts = re.findall(
+        r'<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>',
+        rendered_html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    test_case.assertTrue(scripts)
+    with TemporaryDirectory() as directory:
+        for index, script in enumerate(scripts):
+            script_path = Path(directory) / f'inline-{index}.js'
+            script_path.write_text(script, encoding='utf-8')
+            result = subprocess.run(
+                [node, '--check', str(script_path)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            test_case.assertEqual(
+                result.returncode,
+                0,
+                msg=f'Inline script {index} failed syntax validation:\n{result.stderr}',
+            )
 
 
 def _png_image():
@@ -970,6 +1001,8 @@ class InAppManagementPortalTests(TestCase):
         self.assertTrue(LogEntry.objects.filter(pk=log_entry.pk).exists())
 
     def test_admin_dashboard_renders_booking_and_log_management_controls(self):
+        self.facility.name = "Tonio's Dink District"
+        self.facility.save(update_fields=('name',))
         pending_booking = Booking.objects.create(
             user=self.customer,
             resource=self.resource,
@@ -1008,19 +1041,24 @@ class InAppManagementPortalTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Cancel Booking')
         self.assertContains(response, 'Payment was already recorded.')
-        self.assertContains(response, 'id="admin-cancel-booking-modal"')
-        self.assertContains(response, 'id="admin-cancel-booking-form"')
-        self.assertContains(response, 'admin-cancel-paid-warning')
+        self.assertContains(response, 'data-cancel-modal')
+        self.assertContains(response, 'data-cancel-form')
+        self.assertContains(response, 'data-modal-paid-warning')
+        self.assertContains(response, 'class="cg-modal-overlay"')
+        self.assertContains(response, 'z-index: 99990')
+        self.assertContains(response, '.cg-modal-overlay.is-open')
         self.assertContains(response, 'booking-table-scroll')
         self.assertContains(response, 'overscroll-behavior: contain')
         self.assertContains(response, 'data-booking-search')
         self.assertContains(response, 'data-booking-status-filter')
         self.assertContains(response, 'data-booking-active-only')
         self.assertContains(response, 'data-booking-count')
-        self.assertContains(response, 'admin-booking-cancel-trigger')
+        self.assertContains(response, 'data-cancel-trigger')
         self.assertContains(response, 'event.preventDefault()')
         self.assertContains(response, 'event.stopPropagation()')
-        self.assertContains(response, 'form.action = data.cancelUrl;')
+        self.assertContains(response, "event.target.closest('[data-cancel-trigger]')")
+        self.assertContains(response, 'form.action = cancelTrigger.dataset.cancelUrl;')
+        self.assertContains(response, 'Tonio&#x27;s Dink District')
         self.assertContains(
             response,
             (
@@ -1045,24 +1083,34 @@ class InAppManagementPortalTests(TestCase):
         )
         self.assertContains(response, 'Delete Log')
         self.assertContains(response, 'Delete All Logs')
+        self.assertContains(response, 'data-log-delete-trigger')
         self.assertContains(
             response,
-            reverse('admin_delete_log', kwargs={'log_id': log_entry.pk}),
+            (
+                'data-log-delete-url="'
+                + reverse('admin_delete_log', kwargs={'log_id': log_entry.pk})
+                + '"'
+            ),
         )
         self.assertContains(response, reverse('admin_delete_all_logs'))
-        self.assertContains(response, 'id="delete-all-admin-logs"')
+        self.assertContains(response, 'data-log-delete-all-modal')
+        self.assertContains(response, 'data-log-delete-all-trigger')
         html = response.content.decode()
+        modal_start = re.search(
+            r'<div\s+class="cg-modal-overlay"\s+data-cancel-modal',
+            html,
+        ).start()
         self.assertLess(
             html.index('</main>'),
-            html.index('id="admin-cancel-booking-modal"'),
+            modal_start,
         )
-        modal_start = html.index('id="admin-cancel-booking-modal"')
-        modal_end = html.index('id="admin-cancel-paid-warning"', modal_start)
+        modal_end = html.index('data-modal-paid-warning', modal_start)
         self.assertIn('name="csrfmiddlewaretoken"', html[modal_start:modal_end])
         self.assertNotIn(
             'hover-lift mb-4" aria-labelledby="master-bookings-heading"',
             html,
         )
+        assert_rendered_scripts_parse(self, html)
 
     def test_owner_dashboard_renders_isolated_booking_history_controls(self):
         pending_booking = Booking.objects.create(
@@ -1103,7 +1151,10 @@ class InAppManagementPortalTests(TestCase):
         self.assertContains(response, 'Cancelled')
         self.assertContains(response, pending_booking.payment_reference)
         self.assertContains(response, 'Owner historical cancellation')
-        self.assertContains(response, 'id="owner-cancel-booking-modal"')
+        self.assertContains(response, 'data-cancel-modal')
+        self.assertContains(response, 'data-cancel-trigger')
+        self.assertContains(response, 'data-cancel-form')
+        self.assertContains(response, 'class="cg-modal-overlay"')
         self.assertContains(
             response,
             (
@@ -1115,6 +1166,7 @@ class InAppManagementPortalTests(TestCase):
                 + '"'
             ),
         )
+        assert_rendered_scripts_parse(self, response.content.decode())
 
     def test_admin_commission_collection_ledger_tracks_verified_payments(self):
         booking = Booking.objects.create(

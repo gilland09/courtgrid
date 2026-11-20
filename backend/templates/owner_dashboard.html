@@ -312,12 +312,13 @@
                                         <button
                                             class="btn btn-sm btn-outline-danger owner-booking-cancel-trigger"
                                             type="button"
-                                            data-booking-reference="{{ booking.payment_reference }}"
+                                            data-cancel-trigger
+                                            data-cancel-url="{% url 'owner_cancel_booking' booking.pk %}"
+                                            data-booking-ref="{{ booking.payment_reference }}"
                                             data-booking-player="{{ booking.user.get_username }}"
                                             data-booking-venue="{{ booking.resource.facility.name }} / {{ booking.resource.name }}"
                                             data-booking-slot="{{ booking.start_datetime|date:'M j, Y g:i A' }}–{{ booking.end_datetime|date:'g:i A' }}"
                                             data-booking-paid="{% if booking.payment_status == 'paid' %}true{% else %}false{% endif %}"
-                                            data-cancel-url="{% url 'owner_cancel_booking' booking.pk %}"
                                         >Cancel Booking</button>
                                     {% else %}
                                         <span class="badge text-bg-secondary mt-1">Cancelled</span>
@@ -340,35 +341,33 @@
 
 {% block modals %}
 <div
-    class="modal fade courtgrid-cancel-modal text-start"
-    id="owner-cancel-booking-modal"
-    tabindex="-1"
-    aria-labelledby="owner-cancel-booking-title"
+    class="cg-modal-overlay"
+    data-cancel-modal
     aria-hidden="true"
 >
-    <div class="modal-dialog modal-dialog-centered">
-        <section class="modal-content booking-modal-content">
+    <div class="cg-modal-card" role="dialog" aria-modal="true" aria-labelledby="owner-cancel-booking-title">
+        <section class="card border-0">
             <div class="modal-header border-0 pb-0">
                 <h2 class="modal-title h5" id="owner-cancel-booking-title">Cancel booking?</h2>
-                <button type="button" class="btn-close owner-cancel-close" aria-label="Close"></button>
+                <button type="button" class="btn-close" data-modal-close aria-label="Close"></button>
             </div>
-            <form method="post" id="owner-cancel-booking-form">
+            <form method="post" data-cancel-form>
                 <div class="modal-body">
                     {% csrf_token %}
-                    <div class="alert alert-warning d-none" id="owner-cancel-paid-warning" role="alert">
+                    <div class="cg-paid-warning mb-3" data-modal-paid-warning role="alert" hidden>
                         Payment was already recorded. Cancelling releases the time slot immediately, and any refund must be coordinated directly with the player.
                     </div>
                     <dl class="row small mb-3">
-                        <dt class="col-4">Reservation</dt><dd class="col-8" id="owner-cancel-reference"></dd>
-                        <dt class="col-4">Player</dt><dd class="col-8" id="owner-cancel-player"></dd>
-                        <dt class="col-4">Venue</dt><dd class="col-8" id="owner-cancel-venue"></dd>
-                        <dt class="col-4">Slot</dt><dd class="col-8" id="owner-cancel-slot"></dd>
+                        <dt class="col-4">Reservation</dt><dd class="col-8" data-modal-booking-ref></dd>
+                        <dt class="col-4">Player</dt><dd class="col-8" data-modal-booking-player></dd>
+                        <dt class="col-4">Venue</dt><dd class="col-8" data-modal-booking-venue></dd>
+                        <dt class="col-4">Slot</dt><dd class="col-8" data-modal-booking-slot></dd>
                     </dl>
                     <p class="text-body-secondary">This action immediately releases the selected time slot.</p>
                     <label class="form-label" for="owner-cancellation-reason">Cancellation reason</label>
                     <textarea class="form-control" id="owner-cancellation-reason" name="cancellation_reason" maxlength="180" rows="3" placeholder="Optional note for the booking record"></textarea>
                     <div class="d-flex gap-2 mt-3">
-                        <button type="button" class="btn btn-outline-secondary flex-fill owner-cancel-close">Keep Booking</button>
+                        <button type="button" class="btn btn-outline-secondary flex-fill" data-modal-close>Keep Booking</button>
                         <button type="submit" class="btn btn-danger flex-fill">Cancel Booking</button>
                     </div>
                 </div>
@@ -376,52 +375,4 @@
         </section>
     </div>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-(() => {
-    const modalElement = document.getElementById('owner-cancel-booking-modal');
-    if (!modalElement) return;
-    const modal = bootstrap.Modal.getOrCreateInstance(modalElement, {
-        backdrop: true,
-        keyboard: true,
-    });
-    const form = document.getElementById('owner-cancel-booking-form');
-    const warning = document.getElementById('owner-cancel-paid-warning');
-    const hideModal = () => {
-        modal.hide();
-        document.body.classList.remove('courtgrid-cancel-modal-open');
-    };
-    document.querySelectorAll('.owner-booking-cancel-trigger').forEach((button) => {
-        button.addEventListener('click', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            const data = button.dataset;
-            form.action = data.cancelUrl;
-            document.getElementById('owner-cancel-reference').textContent = data.bookingReference;
-            document.getElementById('owner-cancel-player').textContent = data.bookingPlayer;
-            document.getElementById('owner-cancel-venue').textContent = data.bookingVenue;
-            document.getElementById('owner-cancel-slot').textContent = data.bookingSlot;
-            warning.classList.toggle('d-none', data.bookingPaid !== 'true');
-            form.elements.cancellation_reason.value = '';
-            document.body.classList.add('courtgrid-cancel-modal-open');
-            modal.show();
-        });
-    });
-    modalElement.querySelectorAll('.owner-cancel-close').forEach((button) => {
-        button.addEventListener('click', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            hideModal();
-        });
-    });
-    modalElement.addEventListener('click', (event) => {
-        if (event.target === modalElement) hideModal();
-    });
-    modalElement.addEventListener('hidden.bs.modal', () => {
-        document.body.classList.remove('courtgrid-cancel-modal-open');
-    });
-})();
-</script>
 {% endblock %}

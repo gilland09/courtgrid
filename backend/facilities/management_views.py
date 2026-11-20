@@ -80,14 +80,12 @@ def owner_dashboard_context(user, onboarding_form=None):
         .select_related('facility', 'resource')
     )
     bookings = (
-        Booking.objects.filter(
-            resource__facility_id__in=facility_ids,
-            status=Booking.Status.CONFIRMED,
-        )
+        Booking.objects.filter(resource__facility_id__in=facility_ids)
         .select_related('user', 'resource__facility', 'sport')
         .order_by('start_datetime')
     )
-    financial_totals = bookings.aggregate(
+    confirmed_bookings = bookings.filter(status=Booking.Status.CONFIRMED)
+    financial_totals = confirmed_bookings.aggregate(
         gross=Sum(
             'total_price',
             filter=Q(payment_status=Booking.PaymentStatus.PAID),

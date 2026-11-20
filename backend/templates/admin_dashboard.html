@@ -201,12 +201,13 @@
                                         <button
                                             class="btn btn-sm btn-outline-danger admin-booking-cancel-trigger"
                                             type="button"
-                                            data-booking-reference="{{ booking.payment_reference }}"
+                                            data-cancel-trigger
+                                            data-cancel-url="{% url 'admin_cancel_booking' booking.pk %}"
+                                            data-booking-ref="{{ booking.payment_reference }}"
                                             data-booking-player="{{ booking.user.get_username }}"
                                             data-booking-venue="{{ booking.resource.facility.name }} / {{ booking.resource.name }}"
                                             data-booking-slot="{{ booking.start_datetime|date:'M j, Y g:i A' }}–{{ booking.end_datetime|date:'g:i A' }}"
                                             data-booking-paid="{% if booking.payment_status == 'paid' %}true{% else %}false{% endif %}"
-                                            data-cancel-url="{% url 'admin_cancel_booking' booking.pk %}"
                                         >Cancel Booking</button>
                                     {% else %}
                                         <span class="badge text-bg-secondary mt-1">Cancelled</span>
@@ -261,8 +262,7 @@
                 <button
                     class="btn btn-sm btn-outline-danger"
                     type="button"
-                    data-bs-toggle="modal"
-                    data-bs-target="#delete-all-admin-logs"
+                    data-log-delete-all-trigger
                 >Delete All Logs</button>
             {% endif %}
         </div>
@@ -284,35 +284,9 @@
                                 <button
                                     class="btn btn-sm btn-outline-danger"
                                     type="button"
-                                    data-bs-toggle="modal"
-                                    data-bs-target="#delete-admin-log-{{ log.pk }}"
+                                    data-log-delete-trigger
+                                    data-log-delete-url="{% url 'admin_delete_log' log.pk %}"
                                 >Delete Log</button>
-                                <div
-                                    class="modal fade text-start"
-                                    id="delete-admin-log-{{ log.pk }}"
-                                    tabindex="-1"
-                                    aria-labelledby="delete-admin-log-title-{{ log.pk }}"
-                                    aria-hidden="true"
-                                >
-                                    <div class="modal-dialog modal-dialog-centered">
-                                        <section class="modal-content booking-modal-content">
-                                            <div class="modal-header border-0 pb-0">
-                                                <h2 class="modal-title h5" id="delete-admin-log-title-{{ log.pk }}">Delete this log entry?</h2>
-                                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                                            </div>
-                                            <form method="post" action="{% url 'admin_delete_log' log.pk %}">
-                                                <div class="modal-body">
-                                                    {% csrf_token %}
-                                                    <p class="text-body-secondary mb-0">Only this administrative log entry will be permanently removed. Users and business records are not affected.</p>
-                                                    <div class="d-flex gap-2 mt-3">
-                                                        <button type="button" class="btn btn-outline-secondary flex-fill" data-bs-dismiss="modal">Keep Log</button>
-                                                        <button type="submit" class="btn btn-danger flex-fill">Delete Log</button>
-                                                    </div>
-                                                </div>
-                                            </form>
-                                        </section>
-                                    </div>
-                                </div>
                             </td>
                         </tr>
                     {% empty %}
@@ -323,35 +297,6 @@
         </div>
     </div>
 </section>
-
-{% if admin_logs %}
-<div
-    class="modal fade"
-    id="delete-all-admin-logs"
-    tabindex="-1"
-    aria-labelledby="delete-all-admin-logs-title"
-    aria-hidden="true"
->
-    <div class="modal-dialog modal-dialog-centered">
-        <section class="modal-content booking-modal-content">
-            <div class="modal-header border-0 pb-0">
-                <h2 class="modal-title h5" id="delete-all-admin-logs-title">Permanently delete all logs?</h2>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <form method="post" action="{% url 'admin_delete_all_logs' %}">
-                <div class="modal-body">
-                    {% csrf_token %}
-                    <div class="alert alert-danger" role="alert">This irreversible action permanently removes every Django administration log entry. Users, facilities, and bookings are not deleted.</div>
-                    <div class="d-flex gap-2">
-                        <button type="button" class="btn btn-outline-secondary flex-fill" data-bs-dismiss="modal">Keep Logs</button>
-                        <button type="submit" class="btn btn-danger flex-fill">Delete All Logs</button>
-                    </div>
-                </div>
-            </form>
-        </section>
-    </div>
-</div>
-{% endif %}
 
 <section class="card hover-lift mb-4" aria-labelledby="active-closures-heading">
     <div class="card-body">
@@ -388,35 +333,33 @@
 
 {% block modals %}
 <div
-    class="modal fade courtgrid-cancel-modal text-start"
-    id="admin-cancel-booking-modal"
-    tabindex="-1"
-    aria-labelledby="admin-cancel-booking-title"
+    class="cg-modal-overlay"
+    data-cancel-modal
     aria-hidden="true"
 >
-    <div class="modal-dialog modal-dialog-centered">
-        <section class="modal-content booking-modal-content">
+    <div class="cg-modal-card" role="dialog" aria-modal="true" aria-labelledby="admin-cancel-booking-title">
+        <section class="card border-0">
             <div class="modal-header border-0 pb-0">
                 <h2 class="modal-title h5" id="admin-cancel-booking-title">Cancel booking?</h2>
-                <button type="button" class="btn-close admin-cancel-close" aria-label="Close"></button>
+                <button type="button" class="btn-close" data-modal-close aria-label="Close"></button>
             </div>
-            <form method="post" id="admin-cancel-booking-form">
+            <form method="post" data-cancel-form>
                 <div class="modal-body">
                     {% csrf_token %}
-                    <div class="alert alert-warning d-none" id="admin-cancel-paid-warning" role="alert">
+                    <div class="cg-paid-warning mb-3" data-modal-paid-warning role="alert" hidden>
                         Payment was already recorded. Cancelling releases the time slot immediately, and any refund must be coordinated with the facility owner and player.
                     </div>
                     <dl class="row small mb-3">
-                        <dt class="col-4">Reservation</dt><dd class="col-8" id="admin-cancel-reference"></dd>
-                        <dt class="col-4">Player</dt><dd class="col-8" id="admin-cancel-player"></dd>
-                        <dt class="col-4">Venue</dt><dd class="col-8" id="admin-cancel-venue"></dd>
-                        <dt class="col-4">Slot</dt><dd class="col-8" id="admin-cancel-slot"></dd>
+                        <dt class="col-4">Reservation</dt><dd class="col-8" data-modal-booking-ref></dd>
+                        <dt class="col-4">Player</dt><dd class="col-8" data-modal-booking-player></dd>
+                        <dt class="col-4">Venue</dt><dd class="col-8" data-modal-booking-venue></dd>
+                        <dt class="col-4">Slot</dt><dd class="col-8" data-modal-booking-slot></dd>
                     </dl>
                     <p class="text-body-secondary">This action immediately releases the selected time slot.</p>
                     <label class="form-label" for="admin-cancellation-reason">Cancellation reason</label>
                     <textarea class="form-control" id="admin-cancellation-reason" name="cancellation_reason" maxlength="180" rows="3" placeholder="Optional administrative note"></textarea>
                     <div class="d-flex gap-2 mt-3">
-                        <button type="button" class="btn btn-outline-secondary flex-fill admin-cancel-close">Keep Booking</button>
+                        <button type="button" class="btn btn-outline-secondary flex-fill" data-modal-close>Keep Booking</button>
                         <button type="submit" class="btn btn-danger flex-fill">Cancel Booking</button>
                     </div>
                 </div>
@@ -424,52 +367,46 @@
         </section>
     </div>
 </div>
-{% endblock %}
 
-{% block scripts %}
-<script>
-(() => {
-    const modalElement = document.getElementById('admin-cancel-booking-modal');
-    if (!modalElement) return;
-    const modal = bootstrap.Modal.getOrCreateInstance(modalElement, {
-        backdrop: true,
-        keyboard: true,
-    });
-    const form = document.getElementById('admin-cancel-booking-form');
-    const warning = document.getElementById('admin-cancel-paid-warning');
-    const hideModal = () => {
-        modal.hide();
-        document.body.classList.remove('courtgrid-cancel-modal-open');
-    };
-    document.querySelectorAll('.admin-booking-cancel-trigger').forEach((button) => {
-        button.addEventListener('click', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            const data = button.dataset;
-            form.action = data.cancelUrl;
-            document.getElementById('admin-cancel-reference').textContent = data.bookingReference;
-            document.getElementById('admin-cancel-player').textContent = data.bookingPlayer;
-            document.getElementById('admin-cancel-venue').textContent = data.bookingVenue;
-            document.getElementById('admin-cancel-slot').textContent = data.bookingSlot;
-            warning.classList.toggle('d-none', data.bookingPaid !== 'true');
-            form.elements.cancellation_reason.value = '';
-            document.body.classList.add('courtgrid-cancel-modal-open');
-            modal.show();
-        });
-    });
-    modalElement.querySelectorAll('.admin-cancel-close').forEach((button) => {
-        button.addEventListener('click', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            hideModal();
-        });
-    });
-    modalElement.addEventListener('click', (event) => {
-        if (event.target === modalElement) hideModal();
-    });
-    modalElement.addEventListener('hidden.bs.modal', () => {
-        document.body.classList.remove('courtgrid-cancel-modal-open');
-    });
-})();
-</script>
+<div class="cg-modal-overlay" data-log-delete-modal aria-hidden="true">
+    <div class="cg-modal-card" role="dialog" aria-modal="true" aria-labelledby="delete-log-title">
+        <section class="card border-0">
+            <div class="modal-header border-0 pb-0">
+                <h2 class="modal-title h5" id="delete-log-title">Delete this log entry?</h2>
+                <button type="button" class="btn-close" data-modal-close aria-label="Close"></button>
+            </div>
+            <form method="post" data-log-delete-form>
+                <div class="modal-body">
+                    {% csrf_token %}
+                    <p class="text-body-secondary mb-0">Only this administrative log entry will be permanently removed. Users and business records are not affected.</p>
+                    <div class="d-flex gap-2 mt-3">
+                        <button type="button" class="btn btn-outline-secondary flex-fill" data-modal-close>Keep Log</button>
+                        <button type="submit" class="btn btn-danger flex-fill">Delete Log</button>
+                    </div>
+                </div>
+            </form>
+        </section>
+    </div>
+</div>
+
+<div class="cg-modal-overlay" data-log-delete-all-modal aria-hidden="true">
+    <div class="cg-modal-card" role="dialog" aria-modal="true" aria-labelledby="delete-all-logs-title">
+        <section class="card border-0">
+            <div class="modal-header border-0 pb-0">
+                <h2 class="modal-title h5" id="delete-all-logs-title">Permanently delete all logs?</h2>
+                <button type="button" class="btn-close" data-modal-close aria-label="Close"></button>
+            </div>
+            <form method="post" action="{% url 'admin_delete_all_logs' %}">
+                <div class="modal-body">
+                    {% csrf_token %}
+                    <div class="alert alert-danger" role="alert">This irreversible action permanently removes every Django administration log entry. Users, facilities, and bookings are not deleted.</div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-outline-secondary flex-fill" data-modal-close>Keep Logs</button>
+                        <button type="submit" class="btn btn-danger flex-fill">Delete All Logs</button>
+                    </div>
+                </div>
+            </form>
+        </section>
+    </div>
+</div>
 {% endblock %}

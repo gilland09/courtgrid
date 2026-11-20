@@ -173,22 +173,27 @@ def admin_dashboard_view(request):
         .order_by('start_datetime')
     )
     all_bookings = (
-        Booking.objects.filter(status=Booking.Status.CONFIRMED)
+        Booking.objects.all()
         .select_related('user', 'resource__facility', 'sport')
         .order_by('start_datetime')
     )
+    confirmed_bookings = all_bookings.filter(
+        status=Booking.Status.CONFIRMED,
+    )
     settlement_status = request.GET.get('settlement_status', 'all')
     if settlement_status == 'pending':
-        visible_bookings = all_bookings.filter(
+        visible_bookings = confirmed_bookings.filter(
             payment_status=Booking.PaymentStatus.PAID,
             platform_fee_collected=False,
         )
     elif settlement_status == 'paid':
-        visible_bookings = all_bookings.filter(platform_fee_collected=True)
+        visible_bookings = confirmed_bookings.filter(
+            platform_fee_collected=True,
+        )
     else:
         settlement_status = 'all'
         visible_bookings = all_bookings
-    financial_totals = all_bookings.aggregate(
+    financial_totals = confirmed_bookings.aggregate(
         gross=Sum('total_price'),
         platform_fee=Sum(
             'platform_fee_amount',
@@ -210,7 +215,7 @@ def admin_dashboard_view(request):
         ),
     )
     owner_commission_ledger = (
-        all_bookings.values(
+        confirmed_bookings.values(
             'resource__facility__owner__username',
             'resource__facility__owner__first_name',
             'resource__facility__owner__last_name',

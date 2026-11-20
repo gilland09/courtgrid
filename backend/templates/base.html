@@ -14,6 +14,75 @@
         crossorigin=""
     >
     <link rel="stylesheet" href="{% static 'css/site.css' %}">
+    <style>
+        .booking-table-scroll {
+            max-height: 28rem;
+            overflow-x: auto;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.75rem;
+            background: #fff;
+        }
+        .booking-table-scroll thead th {
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            background-color: #f8fafc;
+            box-shadow: 0 1px 0 #cbd5e1;
+        }
+        .booking-panel-toolbar {
+            display: grid;
+            grid-template-columns: minmax(15rem, 1fr) minmax(12rem, auto) auto;
+            gap: 0.75rem;
+            align-items: end;
+            padding: 0.85rem;
+            border: 1px solid #dbe3dc;
+            border-radius: 0.75rem;
+            background: #f8faf9;
+        }
+        .cg-modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 99990;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+            background: rgba(15, 23, 42, 0.6);
+        }
+        .cg-modal-overlay.is-open {
+            display: flex;
+        }
+        .cg-modal-card {
+            position: relative;
+            z-index: 99991;
+            width: 100%;
+            max-width: 30rem;
+            max-height: calc(100vh - 2rem);
+            overflow-y: auto;
+            border-radius: 0.75rem;
+            background: #fff;
+            box-shadow: 0 1.5rem 4rem rgba(15, 23, 42, 0.35);
+            pointer-events: auto;
+            transform: none !important;
+        }
+        body.cg-modal-open {
+            overflow: hidden;
+        }
+        .cg-paid-warning {
+            border: 1px solid #f59e0b;
+            border-radius: 0.5rem;
+            padding: 0.75rem;
+            background: #fffbeb;
+            color: #92400e;
+        }
+        @media (max-width: 767.98px) {
+            .booking-panel-toolbar {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
     {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -37,6 +106,153 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     {% block scripts %}{% endblock %}
+    {% block extra_js %}{% endblock %}
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const closeModal = (overlay) => {
+                overlay.classList.remove('is-open');
+                overlay.setAttribute('aria-hidden', 'true');
+                document.body.classList.remove('cg-modal-open');
+            };
+            const openModal = (overlay) => {
+                overlay.classList.add('is-open');
+                overlay.setAttribute('aria-hidden', 'false');
+                document.body.classList.add('cg-modal-open');
+            };
+
+            document.addEventListener('click', (event) => {
+                const cancelTrigger = event.target.closest('[data-cancel-trigger]');
+                if (cancelTrigger) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const overlay = document.querySelector('[data-cancel-modal]');
+                    if (!overlay) return;
+                    const form = overlay.querySelector('[data-cancel-form]');
+                    form.action = cancelTrigger.dataset.cancelUrl;
+                    form.querySelector('[name="cancellation_reason"]').value = '';
+                    overlay.querySelector('[data-modal-booking-ref]').textContent =
+                        cancelTrigger.dataset.bookingRef;
+                    overlay.querySelector('[data-modal-booking-player]').textContent =
+                        cancelTrigger.dataset.bookingPlayer;
+                    overlay.querySelector('[data-modal-booking-venue]').textContent =
+                        cancelTrigger.dataset.bookingVenue;
+                    overlay.querySelector('[data-modal-booking-slot]').textContent =
+                        cancelTrigger.dataset.bookingSlot;
+                    overlay.querySelector('[data-modal-paid-warning]').hidden =
+                        cancelTrigger.dataset.bookingPaid !== 'true';
+                    openModal(overlay);
+                    form.querySelector('[name="cancellation_reason"]').focus();
+                    return;
+                }
+
+                const logTrigger = event.target.closest('[data-log-delete-trigger]');
+                if (logTrigger) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const overlay = document.querySelector('[data-log-delete-modal]');
+                    if (!overlay) return;
+                    overlay.querySelector('[data-log-delete-form]').action =
+                        logTrigger.dataset.logDeleteUrl;
+                    openModal(overlay);
+                    return;
+                }
+
+                const deleteAllTrigger = event.target.closest('[data-log-delete-all-trigger]');
+                if (deleteAllTrigger) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const overlay = document.querySelector('[data-log-delete-all-modal]');
+                    if (overlay) openModal(overlay);
+                    return;
+                }
+
+                const closeControl = event.target.closest('[data-modal-close]');
+                if (closeControl) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const overlay = closeControl.closest('.cg-modal-overlay');
+                    if (overlay) closeModal(overlay);
+                    return;
+                }
+
+                const overlay = event.target.closest('.cg-modal-overlay');
+                if (overlay && event.target === overlay) closeModal(overlay);
+            });
+
+            document.addEventListener('keydown', (event) => {
+                if (event.key !== 'Escape') return;
+                document.querySelectorAll('.cg-modal-overlay.is-open').forEach(closeModal);
+            });
+
+            document.querySelectorAll('[data-booking-panel]').forEach((panel) => {
+            const rows = Array.from(panel.querySelectorAll('[data-booking-row]'));
+            const search = panel.querySelector('[data-booking-search]');
+            const status = panel.querySelector('[data-booking-status-filter]');
+            const activeOnly = panel.querySelector('[data-booking-active-only]');
+            const count = panel.querySelector('[data-booking-count]');
+            const applyFilters = () => {
+                const query = (search?.value || '').trim().toLocaleLowerCase();
+                const selectedStatus = status?.value || 'all';
+                const now = Date.now();
+                let visible = 0;
+                rows.forEach((row) => {
+                    const searchMatches = !query || (
+                        row.dataset.bookingSearch || ''
+                    ).toLocaleLowerCase().includes(query);
+                    const bookingStatus = row.dataset.bookingStatus;
+                    const paymentStatus = row.dataset.paymentStatus;
+                    let statusMatches = selectedStatus === 'all';
+                    if (selectedStatus === 'cancelled') {
+                        statusMatches = bookingStatus === 'CANCELLED';
+                    } else if (selectedStatus === 'paid') {
+                        statusMatches = (
+                            bookingStatus === 'CONFIRMED'
+                            && paymentStatus === 'paid'
+                        );
+                    } else if (selectedStatus === 'pending') {
+                        statusMatches = (
+                            bookingStatus === 'CONFIRMED'
+                            && paymentStatus === 'pending'
+                        );
+                    }
+                    const startTime = Date.parse(row.dataset.startDatetime || '');
+                    const isPast = Number.isFinite(startTime) && startTime <= now;
+                    const queueMatches = !activeOnly?.checked
+                        || (bookingStatus === 'CONFIRMED' && !isPast);
+                    row.hidden = !(searchMatches && statusMatches && queueMatches);
+                    if (!row.hidden) {
+                        visible += 1;
+                    }
+                });
+                if (count) {
+                    count.textContent = `Showing ${visible} of ${rows.length} bookings`;
+                }
+            };
+            [search, status, activeOnly].forEach((control) => {
+                if (!control) {
+                    return;
+                }
+                control.addEventListener(
+                    control === search ? 'input' : 'change',
+                    () => {
+                        if (
+                            control === status
+                            && selectedStatusCancelled()
+                            && activeOnly
+                        ) {
+                            activeOnly.checked = false;
+                        }
+                        applyFilters();
+                    },
+                );
+            });
+            function selectedStatusCancelled() {
+                return status?.value === 'cancelled';
+            }
+                applyFilters();
+            });
+        });
+    </script>
     <script>
         let lastScrollTop = 0;
         const navbar = document.querySelector('.smart-navbar');
@@ -52,5 +268,6 @@
             }, { passive: true });
         }
     </script>
+    {% block modals %}{% endblock %}
 </body>
 </html>
