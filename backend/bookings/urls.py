@@ -6,6 +6,8 @@ from .views import (
     MyBookingDetailView,
     MyBookingListView,
     owner_cancel_booking,
+    owner_confirm_payment,
+    owner_reject_receipt,
     booking_receipt_file,
 )
 
@@ -15,6 +17,8 @@ urlpatterns = [
     path('bookings/my/<int:pk>/', MyBookingDetailView.as_view(), name='my-booking-detail'),
     path('bookings/<int:booking_id>/receipt/', booking_receipt_file, name='booking-receipt'),
     path('bookings/<int:pk>/cancel/', BookingCancelView.as_view(), name='booking-cancel'),
+    path('bookings/<int:booking_id>/confirm-payment/', owner_confirm_payment, name='owner_confirm_payment'),
+    path('bookings/<int:booking_id>/reject-receipt/', owner_reject_receipt, name='owner_reject_receipt'),
     path(
         'bookings/<int:booking_id>/owner-cancel/',
         owner_cancel_booking,

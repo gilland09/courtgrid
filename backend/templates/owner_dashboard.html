@@ -404,8 +404,10 @@
     <div class="card-body">
         <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
             <h2 class="h4 mb-0">Venue bookings</h2>
+            <button type="button" class="btn btn-sm btn-outline-warning" data-pending-verification-filter>Pending Verification <span class="badge text-bg-warning">{{ pending_verification_count }}</span></button>
             <span class="small text-body-secondary" data-booking-count aria-live="polite">Showing 0 of 0 bookings</span>
         </div>
+        <p class="small text-body-secondary">Each reservation reference is reviewed separately, even when several slots share one receipt.</p>
         <div class="booking-panel-toolbar mb-3">
             <div>
                 <label class="form-label mb-1" for="owner-booking-search">Search bookings</label>
@@ -421,6 +423,7 @@
                 <label class="form-label mb-1" for="owner-booking-status">Booking status</label>
                 <select class="form-select" id="owner-booking-status" data-booking-status-filter>
                     <option value="all">All bookings</option>
+                    <option value="verification">Pending Verification</option>
                     <option value="pending">Pending Payment</option>
                     <option value="paid">Payment Received / Paid</option>
                     <option value="cancelled">Cancelled</option>
@@ -446,7 +449,7 @@
                             <td>{{ booking.resource.facility.name }} / {{ booking.resource.name }}</td>
                             <td>{{ booking.sport.name }}</td>
                             <td>{{ booking.start_datetime|date:"M j, Y g:i A" }}–{{ booking.end_datetime|date:"g:i A" }}</td>
-                            <td>{{ booking.user.get_username }}</td>
+                            <td>{{ booking.user.get_username }}<br><span class="badge text-bg-light">{{ booking.get_booking_type_display }}</span>{% if booking.booking_type == 'organizer' %}<br><small>{{ booking.organization_name }} · {{ booking.event_name }} · {{ booking.expected_participants }} participants</small>{% endif %}</td>
                             <td>{{ booking.contact_email }}<br>{{ booking.contact_phone }}</td>
                             <td>{{ booking.participant_count }}</td>
                             <td>{{ booking.participant_names|default:"—" }}</td>
@@ -467,19 +470,19 @@
                             <td>
                                 <span class="payment-receipt-badge {% if booking.payment_status == 'pending' %}payment-pending-badge{% endif %}">{{ booking.payment_method_label|default:booking.get_payment_method_display }} · {{ booking.get_status_display }} · {{ booking.get_payment_status_display }}</span>
                                 <br><small>Reservation ref: {{ booking.payment_reference }}</small>
-                                {% if booking.payment_receipt %}<br><a href="{% url 'booking-receipt' booking.pk %}">View receipt</a>{% endif %}
+                                {% if booking.payment_receipt %}<br><button type="button" class="btn btn-sm btn-outline-primary mt-1" data-receipt-trigger data-receipt-url="{% url 'booking-receipt' booking.pk %}" data-receipt-name="{{ booking.payment_receipt.name }}" data-receipt-ref="{{ booking.payment_reference }}">View Receipt</button>{% endif %}
                                 <div class="d-flex flex-wrap gap-1 mt-1">
                                     {% if booking.status != 'CANCELLED' and booking.payment_status == 'pending' %}
-                                        <form method="post">
+                                        <form method="post" action="{% url 'owner_confirm_payment' booking.pk %}">
                                             {% csrf_token %}
-                                            <input type="hidden" name="action" value="verify_payment">
-                                            <input type="hidden" name="booking_id" value="{{ booking.pk }}">
-                                            <button class="btn btn-sm btn-outline-success" type="submit">Mark Payment Received</button>
+                                            <button class="btn btn-sm btn-outline-success" type="submit">{% if booking.status == 'PENDING_VERIFICATION' %}Confirm Payment{% else %}Mark Payment Received{% endif %}</button>
                                         </form>
                                     {% elif booking.payment_verified_at %}
                                         <small class="align-self-center">Verified {{ booking.payment_verified_at|date:"M j, Y g:i A" }}</small>
                                     {% endif %}
-                                    {% if booking.status != 'CANCELLED' %}
+                                    {% if booking.status == 'PENDING_VERIFICATION' %}
+                                        <button class="btn btn-sm btn-outline-danger" type="button" data-reject-trigger data-reject-url="{% url 'owner_reject_receipt' booking.pk %}" data-reject-ref="{{ booking.payment_reference }}">Reject Receipt</button>
+                                    {% elif booking.status == 'CONFIRMED' %}
                                         <button
                                             class="btn btn-sm btn-outline-danger owner-booking-cancel-trigger"
                                             type="button"
@@ -546,6 +549,19 @@ document.addEventListener('DOMContentLoaded', () => {
 {% endblock %}
 
 {% block modals %}
+{% include 'receipt_review_modal.html' %}
+<div class="cg-modal-overlay" data-reject-modal aria-hidden="true">
+    <section class="cg-modal-card p-3" role="dialog" aria-modal="true" aria-labelledby="reject-receipt-title">
+        <div class="d-flex justify-content-between"><h2 class="h5" id="reject-receipt-title">Reject receipt?</h2><button type="button" class="btn-close" data-modal-close aria-label="Close"></button></div>
+        <p>Reservation <strong data-reject-reference></strong> will be cancelled and its slot released. Other references sharing this receipt are unaffected.</p>
+        <form method="post" data-reject-form>
+            {% csrf_token %}
+            <label class="form-label" for="rejection-reason">Reason for rejection</label>
+            <textarea class="form-control" id="rejection-reason" name="rejection_reason" maxlength="180" rows="3" required></textarea>
+            <div class="d-flex gap-2 mt-3"><button type="button" class="btn btn-outline-secondary" data-modal-close>Keep Booking</button><button type="submit" class="btn btn-danger">Reject Receipt</button></div>
+        </form>
+    </section>
+</div>
 <div class="cg-modal-overlay" data-payment-delete-modal aria-hidden="true">
     <div class="cg-modal-card" role="dialog" aria-modal="true" aria-labelledby="payment-delete-title">
         <div class="p-3">

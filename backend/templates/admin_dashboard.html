@@ -133,6 +133,7 @@
                 <label class="form-label mb-1" for="admin-booking-status">Booking status</label>
                 <select class="form-select" id="admin-booking-status" data-booking-status-filter>
                     <option value="all">All bookings</option>
+                    <option value="verification">Pending Verification</option>
                     <option value="pending">Pending Payment</option>
                     <option value="paid">Payment Received / Paid</option>
                     <option value="cancelled">Cancelled</option>
@@ -186,17 +187,18 @@
                                 {% endif %}
                             </td>
                             <td>
-                                <span class="payment-receipt-badge {% if booking.payment_status == 'pending' %}payment-pending-badge{% endif %}">{{ booking.get_payment_method_display }} · {{ booking.get_payment_status_display }}</span>
+                                <span class="payment-receipt-badge {% if booking.payment_status == 'pending' %}payment-pending-badge{% endif %}">{{ booking.payment_method_label|default:booking.get_payment_method_display }} · {{ booking.get_status_display }} · {{ booking.get_payment_status_display }}</span>
                                 <br>Reservation ref: {{ booking.payment_reference }}
+                                {% if booking.payment_receipt %}{% if user.is_superuser or user == booking.resource.facility.owner %}<br><button type="button" class="btn btn-sm btn-outline-primary mt-1" data-receipt-trigger data-receipt-url="{% url 'booking-receipt' booking.pk %}" data-receipt-name="{{ booking.payment_receipt.name }}" data-receipt-ref="{{ booking.payment_reference }}">View Receipt</button>{% endif %}{% endif %}
                                 <div class="d-flex flex-wrap gap-1 mt-1">
-                                    {% if booking.status == 'CONFIRMED' and booking.payment_status == 'pending' %}
+                                    {% if booking.status == 'CONFIRMED' and booking.payment_status == 'pending' %}{% if user.is_superuser or user == booking.resource.facility.owner %}
                                         <form method="post">
                                             {% csrf_token %}
                                             <input type="hidden" name="action" value="verify_payment">
                                             <input type="hidden" name="booking_id" value="{{ booking.pk }}">
                                             <button class="btn btn-sm btn-outline-success" type="submit">Verify Venue Payment</button>
                                         </form>
-                                    {% endif %}
+                                    {% endif %}{% endif %}
                                     {% if booking.status == 'CONFIRMED' %}
                                         <button
                                             class="btn btn-sm btn-outline-danger admin-booking-cancel-trigger"
@@ -209,7 +211,7 @@
                                             data-booking-slot="{{ booking.start_datetime|date:'M j, Y g:i A' }}–{{ booking.end_datetime|date:'g:i A' }}"
                                             data-booking-paid="{% if booking.payment_status == 'paid' %}true{% else %}false{% endif %}"
                                         >Cancel Booking</button>
-                                    {% else %}
+                                    {% elif booking.status == 'CANCELLED' %}
                                         <span class="badge text-bg-secondary mt-1">Cancelled</span>
                                         {% if booking.cancellation_reason %}
                                             <small class="d-block mt-1">{{ booking.cancellation_reason }}</small>
@@ -332,6 +334,7 @@
 {% endblock %}
 
 {% block modals %}
+{% include 'receipt_review_modal.html' %}
 <div
     class="cg-modal-overlay"
     data-cancel-modal

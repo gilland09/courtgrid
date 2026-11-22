@@ -12,6 +12,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from bookings.models import Booking, UserProfile, get_user_role
+from bookings.views import owner_confirm_payment
 
 from .models import (
     BookableResource,
@@ -180,6 +181,7 @@ def owner_dashboard_context(user, onboarding_form=None):
         'closure_form': FacilityClosureForm(facilities=facilities),
         'closures': closures,
         'venue_bookings': bookings,
+        'pending_verification_count': bookings.filter(status=Booking.Status.PENDING_VERIFICATION).count(),
         'financial_totals': {
             key: value or Decimal('0.00')
             for key, value in financial_totals.items()
@@ -626,30 +628,7 @@ def owner_dashboard_view(request):
             else:
                 portal_error(request, form, 'Please correct the payout destination settings.')
         elif action == 'verify_payment':
-            with transaction.atomic():
-                booking = get_object_or_404(
-                    Booking.objects.select_for_update().filter(
-                        resource__facility__in=facilities,
-                        status__in=(Booking.Status.CONFIRMED, Booking.Status.PENDING_VERIFICATION),
-                        payment_status=Booking.PaymentStatus.PENDING,
-                    ),
-                    pk=request.POST.get('booking_id'),
-                )
-                booking.status = Booking.Status.CONFIRMED
-                booking.payment_status = Booking.PaymentStatus.PAID
-                booking.payment_verified_at = timezone.now()
-                booking.payment_verified_by = request.user
-                booking.save(update_fields=(
-                    'status',
-                    'payment_status',
-                    'payment_verified_at',
-                    'payment_verified_by',
-                    'updated_at',
-                ))
-            messages.success(
-                request,
-                f'Payment for reservation {booking.payment_reference} was marked received by the venue.',
-            )
+            return owner_confirm_payment(request, request.POST.get('booking_id'))
         elif action == 'save_hours':
             facility = get_object_or_404(facilities, pk=request.POST.get('facility_id'))
             hours_id = request.POST.get('hours_id')

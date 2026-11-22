@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import PurePath
 
 from django.contrib import messages
@@ -9,6 +10,7 @@ from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.views.decorators.http import require_POST
+from django.views.decorators.clickjacking import xframe_options_sameorigin
 from rest_framework import status
 from rest_framework.exceptions import APIException, NotFound, ValidationError
 from rest_framework.generics import ListAPIView, RetrieveAPIView
@@ -20,6 +22,7 @@ from facilities.availability import slot_unavailability_reason
 from facilities.models import BookableResource, Facility, FacilityPaymentMethod, FacilitySport, ResourceSport
 
 from .models import Booking
+from .email_service import send_booking_confirmed_email, send_booking_rejected_email
 from .serializers import (
     BatchCreateBookingSerializer,
     BookingSerializer,
@@ -33,6 +36,85 @@ PAID_OWNER_CANCELLATION_REASON = (
     'Cancelled by venue owner after payment was received; '
     'coordinate any refund directly with the player.'
 )
+logger = logging.getLogger(__name__)
+
+
+def schedule_booking_email(booking, sender):
+    result = {}
+
+    def send_after_commit():
+        try:
+            result.update(sender(booking))
+        except Exception:
+            logger.exception('Unexpected booking email failure for booking %s', booking.pk)
+            result.update(sent=False, reason='Email delivery failed. Please contact the customer directly.')
+
+    transaction.on_commit(send_after_commit)
+    return result
+
+
+def report_email_result(request, result):
+    if not result:
+        messages.info(request, 'The customer notification is queued until the transaction commits.')
+    elif result['sent']:
+        messages.success(request, 'The customer notification was sent.')
+    else:
+        messages.warning(request, result['reason'])
+
+
+def owner_booking_scope(user):
+    bookings = Booking.objects.select_for_update(of=('self',)).select_related('user', 'resource__facility')
+    if not user.is_superuser:
+        bookings = bookings.filter(resource__facility__owner=user)
+    return bookings
+
+
+@login_required
+@require_POST
+def owner_confirm_payment(request, booking_id):
+    with transaction.atomic():
+        booking = get_object_or_404(owner_booking_scope(request.user), pk=booking_id)
+        if (
+            booking.status not in (Booking.Status.PENDING_VERIFICATION, Booking.Status.CONFIRMED)
+            or booking.payment_status != Booking.PaymentStatus.PENDING
+        ):
+            messages.warning(request, 'This reservation is not awaiting payment verification.')
+            return redirect('owner_dashboard')
+        was_pending = booking.status == Booking.Status.PENDING_VERIFICATION
+        booking.status = Booking.Status.CONFIRMED
+        booking.payment_status = Booking.PaymentStatus.PAID
+        booking.payment_verified_at = timezone.now()
+        booking.payment_verified_by = request.user
+        booking.save(update_fields=(
+            'status', 'payment_status', 'payment_verified_at', 'payment_verified_by', 'updated_at',
+        ))
+        delivery = schedule_booking_email(booking, send_booking_confirmed_email) if was_pending else None
+    messages.success(request, f'Payment for reservation {booking.payment_reference} was marked received by the venue.')
+    if delivery is not None:
+        report_email_result(request, delivery)
+    return redirect('owner_dashboard')
+
+
+@login_required
+@require_POST
+def owner_reject_receipt(request, booking_id):
+    with transaction.atomic():
+        booking = get_object_or_404(owner_booking_scope(request.user), pk=booking_id)
+        if booking.status != Booking.Status.PENDING_VERIFICATION:
+            messages.warning(request, 'Only reservations awaiting verification can be rejected.')
+            return redirect('owner_dashboard')
+        reason = request.POST.get('rejection_reason', '').strip()
+        if not reason or len(reason) > Booking._meta.get_field('cancellation_reason').max_length:
+            messages.error(request, 'Provide a rejection reason of at most 180 characters.')
+            return redirect('owner_dashboard')
+        booking.status = Booking.Status.CANCELLED
+        booking.cancelled_at = timezone.now()
+        booking.cancellation_reason = reason
+        booking.save(update_fields=('status', 'cancelled_at', 'cancellation_reason', 'updated_at'))
+        delivery = schedule_booking_email(booking, send_booking_rejected_email)
+    messages.success(request, f'Receipt for reservation {booking.payment_reference} was rejected and its slot released.')
+    report_email_result(request, delivery)
+    return redirect('owner_dashboard')
 
 
 class BookingConflict(APIException):
@@ -312,6 +394,7 @@ class BookingCreateView(APIView):
 
 
 @login_required(login_url='login')
+@xframe_options_sameorigin
 def booking_receipt_file(request, booking_id):
     booking = get_object_or_404(
         Booking.objects.select_related('resource__facility'), pk=booking_id,

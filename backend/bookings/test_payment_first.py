@@ -4,13 +4,15 @@ from datetime import datetime, time, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 from django.apps import apps
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db import connection
+from django.core import mail
+from django.db import connection, transaction
 from django.conf import settings
-from django.test import Client, SimpleTestCase, TestCase, override_settings
+from django.test import Client, SimpleTestCase, TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -43,6 +45,33 @@ class PrivateMediaTests(SimpleTestCase):
                         self.assertEqual(public_response.status_code, 200)
                         self.assertEqual(b''.join(public_response.streaming_content), b'public')
                         public_response.close()
+
+
+class EmailCommitTests(TransactionTestCase):
+    @override_settings(BREVO_API_KEY='test-key')
+    def test_delivery_timeout_does_not_roll_back_confirmation(self):
+        users = get_user_model()
+        customer = users.objects.create_user(username='email-customer', email='player@example.com')
+        owner = users.objects.create_user(username='email-owner')
+        UserProfile.objects.create(user=owner, role=UserProfile.Role.COURT_OWNER)
+        facility = Facility.objects.create(name='Venue', owner=owner)
+        resource = BookableResource.objects.create(facility=facility, name='Court')
+        sport = Sport.objects.create(name='Basketball', slug='basketball')
+        start = timezone.now() + timedelta(days=1)
+        booking = Booking.objects.create(
+            user=customer, resource=resource, sport=sport, start_datetime=start,
+            end_datetime=start + timedelta(hours=1), participant_count=1,
+            status=Booking.Status.PENDING_VERIFICATION, rate_snapshot='200.00',
+        )
+        self.client.force_login(owner)
+        with patch('bookings.email_service.request.urlopen', side_effect=TimeoutError('timeout')):
+            with self.assertLogs('bookings.email_service', level='ERROR'):
+                response = self.client.post(reverse('owner_confirm_payment', args=[booking.pk]), follow=True)
+        booking.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(booking.status, Booking.Status.CONFIRMED)
+        self.assertEqual(booking.payment_status, Booking.PaymentStatus.PAID)
+        self.assertContains(response, 'Email delivery failed. Please contact the customer directly.')
 
 
 class PaymentFirstTests(TestCase):
@@ -283,6 +312,227 @@ class PaymentFirstTests(TestCase):
         self.assertEqual(dashboard.context['financial_totals']['gross'], 200)
         self.assertEqual(dashboard.context['financial_totals']['owner_payout'], 190)
         self.assertEqual(dashboard.context['financial_totals']['platform_fee'], 10)
+
+    @override_settings(BREVO_API_KEY='', EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_owner_confirms_organizer_and_sends_post_commit_email(self):
+        self.user.email = 'registered@example.com'
+        self.user.save(update_fields=('email',))
+        self.facility.name = "Tonio's Dink District"
+        self.facility.address = 'Naval'
+        self.facility.save(update_fields=('name', 'address'))
+        response = self.submit(
+            booking_type='organizer', organization_name='Club & Co',
+            event_name='Games', expected_participants='8', contact_email='other@example.com',
+        )
+        booking = Booking.objects.get(pk=response.data['id'])
+        self.client.force_login(self.owner)
+        with self.captureOnCommitCallbacks(execute=True) as callbacks:
+            response = self.client.post(reverse('owner_confirm_payment', args=[booking.pk]))
+            self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(len(callbacks), 1)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CONFIRMED)
+        self.assertEqual(booking.payment_status, Booking.PaymentStatus.PAID)
+        self.assertEqual(booking.payment_verified_by, self.owner)
+        self.assertEqual(mail.outbox[0].to, ['registered@example.com'])
+        for expected in (booking.payment_reference, "Tonio's Dink District", 'Court 1',
+                         '10:00 AM', 'Club & Co', 'Games', '8', '₱200.00'):
+            self.assertIn(expected, mail.outbox[0].body)
+        self.assertIn('Club &amp; Co', mail.outbox[0].alternatives[0].content)
+        dashboard = self.client.get(reverse('owner_dashboard'))
+        self.assertEqual(dashboard.context['financial_totals']['gross'], 200)
+        self.assertEqual(dashboard.context['financial_totals']['owner_payout'], 190)
+        self.assertEqual(dashboard.context['financial_totals']['platform_fee'], 10)
+
+    @override_settings(BREVO_API_KEY='', EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_rejection_releases_hold_and_notifies_customer(self):
+        self.user.email = 'player@example.com'
+        self.user.save(update_fields=('email',))
+        response = self.submit()
+        booking = Booking.objects.get(pk=response.data['id'])
+        self.client.force_login(self.owner)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(reverse('owner_reject_receipt', args=[booking.pk]),
+                                        {'rejection_reason': '  Unreadable receipt  '})
+        self.assertEqual(response.status_code, 302)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CANCELLED)
+        self.assertEqual(booking.cancellation_reason, 'Unreadable receipt')
+        self.assertIn('Unreadable receipt', mail.outbox[0].body)
+        self.assertIn('released', mail.outbox[0].body)
+        slots = evaluate_serial_slots(active_resource_offerings(facility_id=self.facility.pk), self.start.date())
+        slot = next(item for item in slots if item['resource_id'] == self.courts[0].pk and item['start_datetime'] == self.start)
+        self.assertEqual(slot['availability'], 'available')
+        dashboard = self.client.get(reverse('owner_dashboard'))
+        self.assertEqual(dashboard.context['financial_totals']['gross'], 0)
+
+        def fake_compute(target_date, facilities, closures, schedules, existing_bookings):
+            self.assertFalse(existing_bookings)
+            serial = evaluate_serial_slots(active_resource_offerings(facility_id=self.facility.pk), target_date)
+            values = [{**item, 'start_datetime': item['start_datetime'].isoformat(),
+                       'end_datetime': item['end_datetime'].isoformat()} for item in serial]
+            return {'slots': values, 'available_slots': [s for s in values if s['availability'] == 'available'],
+                    'parallel_elapsed_time': 0}
+
+        with patch('facilities.views.fetch_parallel_availability', side_effect=fake_compute):
+            result = self.client.get('/api/availability/search', {
+                'mode': 'parallel', 'facility': self.facility.pk,
+                'sport': self.sport.pk, 'date': self.start.date().isoformat(),
+            })
+        self.assertEqual(result.status_code, 200)
+        self.assertTrue(any(item['resource_id'] == self.courts[0].pk
+                            and item['start_datetime'] == self.start
+                            and item['availability'] == 'available' for item in result.data['slots']))
+
+    def test_review_authorization_method_and_reason_validation(self):
+        booking = Booking.objects.get(pk=self.submit().data['id'])
+        confirm = reverse('owner_confirm_payment', args=[booking.pk])
+        reject = reverse('owner_reject_receipt', args=[booking.pk])
+        for user in (self.other, self.other_owner):
+            self.client.force_login(user)
+            self.assertEqual(self.client.post(confirm).status_code, 404)
+            self.assertEqual(self.client.post(reject, {'rejection_reason': 'No'}).status_code, 404)
+        staff = get_user_model().objects.create_user(username='other-staff', is_staff=True)
+        self.client.force_login(staff)
+        self.assertEqual(self.client.post(reverse('admin_dashboard'), {
+            'action': 'verify_payment', 'booking_id': booking.pk,
+        }).status_code, 403)
+        self.client.force_login(self.owner)
+        self.assertEqual(self.client.get(confirm).status_code, 405)
+        self.assertEqual(self.client.get(reject).status_code, 405)
+        self.client.post(reject, {'rejection_reason': '   '})
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.PENDING_VERIFICATION)
+        csrf = Client(enforce_csrf_checks=True)
+        csrf.force_login(self.owner)
+        self.assertEqual(csrf.post(confirm).status_code, 403)
+        self.assertEqual(csrf.post(reject, {'rejection_reason': 'No'}).status_code, 403)
+
+    @override_settings(BREVO_API_KEY='', EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_shared_receipt_reviews_only_the_selected_reservation(self):
+        self.user.email = 'player@example.com'
+        self.user.save(update_fields=('email',))
+        batch = [{
+            'resource_id': court.pk, 'start_datetime': self.start.isoformat(),
+            'end_datetime': (self.start + timedelta(hours=1)).isoformat(),
+        } for court in self.courts]
+        response = self.submit(
+            booking_type='organizer', organization_name='Club', event_name='Games',
+            expected_participants='8', slots=json.dumps(batch),
+            contact_email='player@example.com', contact_phone='+639171234567',
+        )
+        self.assertEqual(response.status_code, 201)
+        first, second = list(Booking.objects.order_by('pk'))
+        self.assertEqual(first.payment_receipt.name, second.payment_receipt.name)
+        self.client.force_login(self.owner)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.client.post(reverse('owner_confirm_payment', args=[first.pk]))
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.status, Booking.Status.CONFIRMED)
+        self.assertEqual(second.status, Booking.Status.PENDING_VERIFICATION)
+        self.client.post(reverse('owner_reject_receipt', args=[first.pk]), {'rejection_reason': 'No'})
+        first.refresh_from_db()
+        self.assertEqual(first.status, Booking.Status.CONFIRMED)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.client.post(reverse('owner_reject_receipt', args=[second.pk]), {'rejection_reason': 'Unreadable'})
+        second.refresh_from_db()
+        self.assertEqual(second.status, Booking.Status.CANCELLED)
+        self.assertEqual(len(mail.outbox), 2)
+
+    @override_settings(BREVO_API_KEY='test-key', BREVO_SENDER_EMAIL='sender@example.com',
+                       BREVO_SENDER_NAME='CourtGrid')
+    def test_brevo_payload_is_sent_over_https(self):
+        self.user.email = 'player@example.com'
+        self.user.save(update_fields=('email',))
+        booking = Booking.objects.get(pk=self.submit().data['id'])
+        self.client.force_login(self.owner)
+        with patch('bookings.email_service.request.urlopen') as urlopen:
+            urlopen.return_value.__enter__.return_value.status = 201
+            with self.captureOnCommitCallbacks(execute=True):
+                self.client.post(reverse('owner_confirm_payment', args=[booking.pk]))
+        req = urlopen.call_args.args[0]
+        payload = json.loads(req.data)
+        self.assertEqual(req.full_url, 'https://api.brevo.com/v3/smtp/email')
+        self.assertEqual(req.get_header('Api-key'), 'test-key')
+        self.assertEqual(urlopen.call_args.kwargs['timeout'], 10)
+        self.assertEqual(payload['sender'], {'email': 'sender@example.com', 'name': 'CourtGrid'})
+        self.assertEqual(payload['to'], [{'email': 'player@example.com'}])
+        for field in ('subject', 'htmlContent', 'textContent'):
+            self.assertIn(booking.payment_reference, payload[field])
+        self.assertIn('name="viewport"', payload['htmlContent'])
+
+    @override_settings(BREVO_API_KEY='test-key')
+    def test_brevo_http_failure_is_reported_without_reversing_confirmation(self):
+        self.user.email = 'player@example.com'
+        self.user.save(update_fields=('email',))
+        booking = Booking.objects.get(pk=self.submit().data['id'])
+        self.client.force_login(self.owner)
+        failure = HTTPError('https://api.brevo.com/v3/smtp/email', 500, 'error', {}, None)
+        with patch('bookings.email_service.request.urlopen', side_effect=failure):
+            with self.assertLogs('bookings.email_service', level='ERROR'):
+                with self.captureOnCommitCallbacks(execute=True):
+                    self.client.post(reverse('owner_confirm_payment', args=[booking.pk]))
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CONFIRMED)
+        self.assertEqual(booking.payment_status, Booking.PaymentStatus.PAID)
+
+    def test_rollback_does_not_send_confirmation(self):
+        booking = Booking.objects.get(pk=self.submit().data['id'])
+        self.client.force_login(self.owner)
+        with patch('bookings.views.send_booking_confirmed_email') as send:
+            with self.captureOnCommitCallbacks(execute=True) as callbacks:
+                with transaction.atomic():
+                    self.client.post(reverse('owner_confirm_payment', args=[booking.pk]))
+                    transaction.set_rollback(True)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.PENDING_VERIFICATION)
+        self.assertEqual(len(callbacks), 0)
+        send.assert_not_called()
+
+    @override_settings(BREVO_API_KEY='')
+    def test_missing_email_is_logged_and_reported(self):
+        from .email_service import send_booking_confirmed_email
+
+        booking = Booking.objects.get(pk=self.submit().data['id'])
+        with self.assertLogs('bookings.email_service', level='WARNING'):
+            result = send_booking_confirmed_email(booking)
+        self.assertFalse(result['sent'])
+        self.assertIn('No customer email', result['reason'])
+
+    @override_settings(BREVO_API_KEY='', EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_booking_contact_email_is_used_when_registered_email_is_blank(self):
+        from .email_service import send_booking_confirmed_email
+
+        self.user.email = '   '
+        self.user.save(update_fields=('email',))
+        booking = Booking.objects.get(pk=self.submit(contact_email='contact@example.com').data['id'])
+        self.assertTrue(send_booking_confirmed_email(booking)['sent'])
+        self.assertEqual(mail.outbox[0].to, ['contact@example.com'])
+
+    def test_review_ui_displays_pending_receipt_and_safe_modals(self):
+        self.facility.name = "Tonio's Dink District"
+        self.facility.save(update_fields=('name',))
+        response = self.submit(booking_type='organizer', organization_name='Club',
+                               event_name='Games', expected_participants='8')
+        booking = Booking.objects.get(pk=response.data['id'])
+        self.client.force_login(self.owner)
+        page = self.client.get(reverse('owner_dashboard'))
+        for value in ('Tonio&#x27;s Dink District', 'Pending Verification', 'Club',
+                      'Games', 'View Receipt', 'Confirm Payment', 'Reject Receipt',
+                      'data-receipt-modal', 'data-reject-modal'):
+            self.assertContains(page, value)
+        assert_rendered_scripts_parse(self, page.content.decode())
+        receipt = self.client.get(reverse('booking-receipt', args=[booking.pk]))
+        self.assertEqual(receipt['X-Frame-Options'], 'SAMEORIGIN')
+        self.assertEqual(b''.join(receipt.streaming_content), b'%PDF-1.4 example')
+        self.client.force_login(self.admin)
+        page = self.client.get(reverse('admin_dashboard'))
+        self.assertContains(page, 'Awaiting Owner Verification')
+        self.assertContains(page, 'View Receipt')
+        self.assertNotContains(page, '>Cancelled</span>')
+        assert_rendered_scripts_parse(self, page.content.decode())
 
     def test_range_search_reports_held_slots_and_rejects_long_ranges(self):
         self.submit()

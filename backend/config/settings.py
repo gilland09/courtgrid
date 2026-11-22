@@ -132,6 +132,22 @@ TRUSTED_PROXY_IPS = tuple(
 )
 COMPUTE_SERVICE_TOKEN = os.environ.get('COMPUTE_SERVICE_TOKEN', '')
 
+BREVO_API_KEY = os.environ.get('BREVO_API_KEY', '').strip()
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@courtgrid.local').strip()
+BREVO_SENDER_EMAIL = os.environ.get('BREVO_SENDER_EMAIL', DEFAULT_FROM_EMAIL).strip()
+BREVO_SENDER_NAME = os.environ.get('BREVO_SENDER_NAME', 'CourtGrid').strip()
+EMAIL_HOST = os.environ.get('EMAIL_HOST', '').strip()
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '25'))
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', '').strip().lower() in {'1', 'true', 'yes', 'on'}
+EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '10'))
+EMAIL_BACKEND = os.environ.get(
+    'EMAIL_BACKEND',
+    'django.core.mail.backends.smtp.EmailBackend' if EMAIL_HOST and not DEBUG
+    else 'django.core.mail.backends.console.EmailBackend',
+)
+
 ROOT_URLCONF = 'config.urls'
 
 TEMPLATES = [

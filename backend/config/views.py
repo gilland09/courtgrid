@@ -20,6 +20,8 @@ from django.views.decorators.http import require_POST
 from django.views.static import serve
 
 from bookings.models import Booking, UserProfile, get_user_role
+from bookings.email_service import send_booking_confirmed_email
+from bookings.views import report_email_result, schedule_booking_email
 from facilities.models import BookableResource, Facility, FacilityClosure, Sport
 from facilities.management_views import (
     pending_venue_verifications,
@@ -127,6 +129,7 @@ def admin_dashboard_view(request):
             return redirect('admin_dashboard')
         if action not in {'collect_commission', 'verify_payment'}:
             return redirect('admin_dashboard')
+        delivery = None
         with transaction.atomic():
             bookings = Booking.objects.select_for_update().filter(
                 status__in=(Booking.Status.CONFIRMED, Booking.Status.PENDING_VERIFICATION),
@@ -155,9 +158,15 @@ def admin_dashboard_view(request):
                         f'Commission of ₱{booking.platform_fee_amount} marked collected from {booking.resource.facility.owner or "the venue owner"}.',
                     )
             elif action == 'verify_payment':
+                if not (
+                    request.user.is_superuser
+                    or booking.resource.facility.owner_id == request.user.pk
+                ):
+                    raise PermissionDenied
                 if booking.payment_status != Booking.PaymentStatus.PENDING:
                     messages.info(request, 'This reservation is not awaiting payment verification.')
                 else:
+                    was_pending = booking.status == Booking.Status.PENDING_VERIFICATION
                     booking.status = Booking.Status.CONFIRMED
                     booking.payment_status = Booking.PaymentStatus.PAID
                     booking.payment_verified_at = timezone.now()
@@ -170,6 +179,10 @@ def admin_dashboard_view(request):
                         'updated_at',
                     ))
                     messages.success(request, 'Venue payment marked verified by the platform administrator.')
+                    if was_pending:
+                        delivery = schedule_booking_email(booking, send_booking_confirmed_email)
+        if delivery is not None:
+            report_email_result(request, delivery)
         return redirect('admin_dashboard')
 
     now = timezone.now()
