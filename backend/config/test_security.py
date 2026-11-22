@@ -1,14 +1,36 @@
 from unittest.mock import patch
+import os
+from pathlib import Path
+import subprocess
+import sys
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import RequestFactory, TestCase
+from django.test import RequestFactory, SimpleTestCase, TestCase
 from django.urls import reverse
 
 from bookings.models import UserProfile
 from config.middleware import _client_ip
 from facilities.portal_forms import FacilityPayoutWalletForm
+
+
+class ReceiptStorageSettingsTests(SimpleTestCase):
+    def test_default_receipt_storage_is_inside_media(self):
+        environment = os.environ.copy()
+        environment.pop('PRIVATE_RECEIPT_ROOT', None)
+        environment['DJANGO_DEBUG'] = 'True'
+        code = (
+            'import dotenv; dotenv.load_dotenv = lambda *a, **k: None; '
+            'from config import settings; '
+            'print(settings.PRIVATE_RECEIPT_ROOT == settings.MEDIA_ROOT / "private_receipts")'
+        )
+        result = subprocess.run(
+            [sys.executable, '-c', code],
+            cwd=Path(__file__).resolve().parent.parent,
+            env=environment, capture_output=True, text=True, check=True,
+        )
+        self.assertEqual(result.stdout.strip(), 'True')
 
 
 class RateLimitSecurityTests(TestCase):

@@ -109,7 +109,7 @@ def serialize_availability_request(
         'existing_bookings': [
             _serialize_booking(booking)
             for booking in existing_bookings
-            if booking.status == 'CONFIRMED'
+            if booking.status in {'CONFIRMED', 'PENDING_VERIFICATION'}
         ],
     }
 

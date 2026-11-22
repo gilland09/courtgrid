@@ -15,10 +15,9 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import include, path
-from django.views.static import serve
+from django.urls import include, path, re_path
+import re
 
 from facilities.management_views import (
     management_closures_view,
@@ -26,6 +25,7 @@ from facilities.management_views import (
     owner_manage_amenities_view,
     owner_manage_courts_view,
     owner_manage_photos_view,
+    owner_manage_payment_methods_view,
     owner_dashboard_view,
 )
 from facilities.views import facility_detail_view
@@ -41,6 +41,7 @@ from .views import (
     my_bookings_view,
     register_view,
     settle_commission_view,
+    guarded_media_view,
 )
 
 urlpatterns = [
@@ -91,6 +92,11 @@ urlpatterns = [
         owner_manage_amenities_view,
         name='owner-manage-amenities',
     ),
+    path(
+        'owner/facilities/<int:facility_id>/payment-methods/',
+        owner_manage_payment_methods_view,
+        name='owner-manage-payment-methods',
+    ),
     path('management/facilities/', management_facilities_view, name='management_facilities'),
     path('management/closures/', management_closures_view, name='management_closures'),
     path('logout/', logout_view, name='logout'),
@@ -98,13 +104,9 @@ urlpatterns = [
     path('api/', include('bookings.urls')),
 ]
 
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-else:
-    urlpatterns += [
-        path(
-            'media/<path:path>',
-            serve,
-            {'document_root': settings.MEDIA_ROOT},
-        ),
-    ]
+urlpatterns += [
+    re_path(
+        r'^%s(?P<path>.*)$' % re.escape(settings.MEDIA_URL.lstrip('/')),
+        guarded_media_view,
+    ),
+]

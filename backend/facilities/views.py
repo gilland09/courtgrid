@@ -25,13 +25,16 @@ from .models import (
     FacilityClosure,
     FacilityOperatingHours,
     FacilityPhoto,
+    FacilityPaymentMethod,
     FacilitySport,
     Sport,
     SportSchedule,
 )
 from .serializers import (
     AvailabilitySearchSerializer,
+    AvailabilityRangeSerializer,
     FacilitySerializer,
+    FacilityPaymentMethodSerializer,
     SportSerializer,
 )
 from bookings.models import Booking, UserProfile
@@ -83,6 +86,11 @@ class FacilityDiscoveryQuerysetMixin:
                     'pk',
                 ),
                 to_attr='ordered_photos',
+            ),
+            Prefetch(
+                'payment_methods',
+                queryset=FacilityPaymentMethod.objects.filter(is_active=True),
+                to_attr='active_payment_methods',
             ),
         )
 
@@ -242,9 +250,12 @@ def facility_detail_view(request, pk):
             .first()
             or ''
         )
+    payment_methods = list(facility.payment_methods.filter(is_active=True))
     return render(request, 'facility_detail.html', {
         'facility': facility,
         'available_payment_methods': facility.available_payment_methods,
+        'payment_methods': payment_methods,
+        'payment_methods_data': list(FacilityPaymentMethodSerializer(payment_methods, many=True).data),
         'facility_sports': facility.active_facility_sports,
         'operating_hours': facility.ordered_operating_hours,
         'today': timezone.localdate().isoformat(),
@@ -262,7 +273,10 @@ class AvailabilitySearchView(APIView):
     permission_classes = (AllowAny,)
 
     def get(self, request):
-        serializer = AvailabilitySearchSerializer(data=request.query_params)
+        return self.search(request.query_params)
+
+    def search(self, params):
+        serializer = AvailabilitySearchSerializer(data=params)
         serializer.is_valid(raise_exception=True)
         search_date = serializer.validated_data['date']
         if abs((search_date - timezone.localdate()).days) > 31:
@@ -352,7 +366,7 @@ class AvailabilitySearchView(APIView):
         ).values_list('pk', flat=True).distinct()
         booking_queryset = Booking.objects.filter(
             resource_id__in=resource_ids,
-            status=Booking.Status.CONFIRMED,
+            status__in=(Booking.Status.CONFIRMED, Booking.Status.PENDING_VERIFICATION),
             start_datetime__lt=day_end,
             end_datetime__gt=day_start,
         ).select_related('resource').order_by('pk')
@@ -413,4 +427,44 @@ class AvailabilitySearchView(APIView):
             'parallel_elapsed_time': service_response['parallel_elapsed_time'],
             'results': results,
             'slots': schedule_slots,
+        })
+
+
+class AvailabilityRangeView(APIView):
+    permission_classes = (AllowAny,)
+
+    def post(self, request):
+        serializer = AvailabilityRangeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        court_ids = set(data['court_ids'])
+        courts = list(BookableResource.objects.filter(
+            pk__in=court_ids, is_active=True, facility__is_active=True,
+        ))
+        if len(courts) != len(court_ids) or len({court.facility_id for court in courts}) != 1:
+            raise ValidationError({'court_ids': 'Select active courts from one facility.'})
+        available, skipped, modes = [], [], []
+        current_date = data['start_date']
+        while current_date <= data['end_date']:
+            params = {'date': current_date.isoformat(), 'facility': courts[0].facility_id}
+            if data.get('sport'):
+                params['sport'] = data['sport']
+            response = AvailabilitySearchView().search(params)
+            modes.append(response.data['mode'])
+            for slot in response.data['slots']:
+                if slot['resource_id'] not in court_ids:
+                    continue
+                start = timezone.localtime(slot['start_datetime'], APPLICATION_TIMEZONE).time()
+                end = timezone.localtime(slot['end_datetime'], APPLICATION_TIMEZONE).time()
+                if data.get('start_time') and (
+                    start < data['start_time'] or end > data['end_time']
+                ):
+                    continue
+                (available if slot['availability'] == 'available' else skipped).append(slot)
+            current_date += timedelta(days=1)
+        return Response({
+            'timezone': settings.TIME_ZONE,
+            'available_slots': available,
+            'skipped_slots': skipped,
+            'modes': modes,
         })

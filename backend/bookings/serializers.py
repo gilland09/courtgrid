@@ -2,6 +2,7 @@ import re
 from datetime import timedelta
 
 from django.utils import timezone
+from django.urls import reverse
 from rest_framework import serializers
 
 from facilities.models import BookableResource, Sport
@@ -29,10 +30,14 @@ class BookingSerializer(serializers.ModelSerializer):
         read_only=True,
     )
     merchant_qr_url = serializers.SerializerMethodField()
+    payment_receipt_url = serializers.SerializerMethodField()
 
     def get_merchant_qr_url(self, booking):
         image = booking.resource.facility.payment_qr_image
         return image.url if image else ''
+
+    def get_payment_receipt_url(self, booking):
+        return reverse('booking-receipt', kwargs={'booking_id': booking.pk}) if booking.payment_receipt else None
 
     class Meta:
         model = Booking
@@ -55,6 +60,16 @@ class BookingSerializer(serializers.ModelSerializer):
             'contact_email',
             'contact_phone',
             'status',
+            'booking_type',
+            'organization_name',
+            'event_name',
+            'expected_participants',
+            'payment_method_used',
+            'payment_method_label',
+            'payment_account_number',
+            'payment_receipt_uploaded_at',
+            'payment_receipt_url',
+            'policy_accepted',
             'rate_snapshot',
             'total_price',
             'platform_fee_rate',
@@ -214,3 +229,51 @@ class BatchCreateBookingSerializer(serializers.Serializer):
         ):
             raise serializers.ValidationError('Enter a valid phone number with at least 7 digits.')
         return value.strip()
+
+
+class PaymentFirstSerializer(serializers.Serializer):
+    booking_type = serializers.ChoiceField(choices=Booking.BookingType.choices)
+    organization_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    event_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    expected_participants = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    payment_method_used = serializers.IntegerField(min_value=1)
+    policy_accepted = serializers.BooleanField()
+    payment_receipt = serializers.FileField()
+    expected_total = serializers.DecimalField(
+        max_digits=12, decimal_places=2, min_value=0, required=False,
+    )
+
+    def validate_policy_accepted(self, value):
+        if not value:
+            raise serializers.ValidationError('You must accept the booking policy.')
+        return value
+
+    def validate_payment_receipt(self, uploaded):
+        from pathlib import PurePath
+
+        extension = PurePath(uploaded.name).suffix.lower()
+        signatures = {
+            '.jpg': b'\xff\xd8\xff',
+            '.jpeg': b'\xff\xd8\xff',
+            '.png': b'\x89PNG\r\n\x1a\n',
+            '.pdf': b'%PDF-',
+        }
+        signature = signatures.get(extension)
+        if signature is None:
+            raise serializers.ValidationError('Upload a JPG, JPEG, PNG, or PDF receipt.')
+        if uploaded.size > 5 * 1024 * 1024:
+            raise serializers.ValidationError('The receipt must be 5 MB or smaller.')
+        try:
+            header = uploaded.read(len(signature))
+        finally:
+            uploaded.seek(0)
+        if header != signature:
+            raise serializers.ValidationError('The receipt does not match its file type.')
+        return uploaded
+
+    def validate(self, attrs):
+        if attrs['booking_type'] == Booking.BookingType.ORGANIZER:
+            for name in ('organization_name', 'event_name', 'expected_participants'):
+                if not attrs.get(name):
+                    raise serializers.ValidationError({name: 'This field is required for organizers.'})
+        return attrs

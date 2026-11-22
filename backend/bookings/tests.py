@@ -1,11 +1,14 @@
 from concurrent.futures import ThreadPoolExecutor
+import json
 from datetime import datetime, time, timedelta
 from decimal import Decimal
 from threading import Barrier
+from tempfile import TemporaryDirectory
 
 from django.contrib.auth import get_user_model
 from django.db import connections
-from django.test import TransactionTestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TransactionTestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -14,6 +17,7 @@ from facilities.models import (
     FacilityClosure,
     Facility,
     FacilityOperatingHours,
+    FacilityPaymentMethod,
     FacilitySport,
     ResourceSport,
     Sport,
@@ -27,6 +31,11 @@ class BookingAPITests(TransactionTestCase):
     reset_sequences = True
 
     def setUp(self):
+        private_dir = TemporaryDirectory()
+        self.addCleanup(private_dir.cleanup)
+        settings_override = override_settings(PRIVATE_RECEIPT_ROOT=private_dir.name)
+        settings_override.enable()
+        self.addCleanup(settings_override.disable)
         user_model = get_user_model()
         self.user = user_model.objects.create_user(
             username='booker',
@@ -44,6 +53,13 @@ class BookingAPITests(TransactionTestCase):
             gcash_number='09171234567',
             maya_number='09181234567',
         )
+        self.methods = {
+            label.lower(): FacilityPaymentMethod.objects.create(
+                facility=self.facility, label=label, account_name='Merchant',
+                account_number='1234567',
+            )
+            for label in ('GCash', 'Maya', 'Cash')
+        }
         self.sport = Sport.objects.create(name='Basketball', slug='basketball')
         self.facility_sport = FacilitySport.objects.create(
             facility=self.facility,
@@ -89,11 +105,20 @@ class BookingAPITests(TransactionTestCase):
         return payload
 
     def create_booking(self, client=None, **overrides):
-        return (client or self.client).post(
-            '/api/bookings/',
-            self.booking_payload(**overrides),
-            format='json',
-        )
+        return self.post_booking(self.booking_payload(**overrides), client=client)
+
+    def post_booking(self, payload, client=None):
+        payload = dict(payload)
+        method = payload.pop('payment_method', 'gcash')
+        payload.update({
+            'booking_type': 'player',
+            'payment_method_used': self.methods[method].pk if method in self.methods else 999999,
+            'policy_accepted': 'true',
+            'payment_receipt': SimpleUploadedFile('receipt.pdf', b'%PDF-1.4 test'),
+        })
+        if 'slots' in payload:
+            payload['slots'] = json.dumps(payload['slots'])
+        return (client or self.client).post('/api/bookings/', payload, format='multipart')
 
     def test_valid_booking_is_created_with_server_calculated_price(self):
         response = self.create_booking(
@@ -104,7 +129,7 @@ class BookingAPITests(TransactionTestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['user'], self.user.pk)
-        self.assertEqual(response.data['status'], Booking.Status.CONFIRMED)
+        self.assertEqual(response.data['status'], Booking.Status.PENDING_VERIFICATION)
         self.assertEqual(response.data['facility_name'], self.facility.name)
         self.assertEqual(response.data['resource_name'], self.resource.name)
         self.assertEqual(response.data['sport_name'], self.sport.name)
@@ -126,8 +151,7 @@ class BookingAPITests(TransactionTestCase):
 
     def test_batch_booking_creates_multiple_slots_atomically_with_total(self):
         second_start = self.start_datetime + timedelta(hours=1)
-        response = self.client.post(
-            '/api/bookings/',
+        response = self.post_booking(
             {
                 'sport_id': self.sport.pk,
                 'participant_count': 3,
@@ -147,7 +171,6 @@ class BookingAPITests(TransactionTestCase):
                     },
                 ],
             },
-            format='json',
         )
 
         self.assertEqual(response.status_code, 201, response.data)
@@ -177,22 +200,22 @@ class BookingAPITests(TransactionTestCase):
         self.assertEqual(response.data['owner_payout_amount'], '237.50')
 
     def test_unconfigured_payment_methods_are_rejected(self):
-        self.facility.gcash_number = ''
-        self.facility.maya_number = ''
-        self.facility.save(update_fields=('gcash_number', 'maya_number'))
+        self.methods['gcash'].is_active = False
+        self.methods['gcash'].save(update_fields=('is_active',))
 
         response = self.create_booking(payment_method='gcash')
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn('payment_method', response.data)
+        self.assertIn('payment_method_used', response.data)
         self.assertEqual(Booking.objects.count(), 0)
 
     def test_card_booking_requires_owner_card_configuration(self):
         response = self.create_booking(payment_method='card')
         self.assertEqual(response.status_code, 400)
 
-        self.facility.accepts_card = True
-        self.facility.save(update_fields=('accepts_card',))
+        self.methods['card'] = FacilityPaymentMethod.objects.create(
+            facility=self.facility, label='Card', account_name='Merchant', account_number='1234',
+        )
         response = self.create_booking(payment_method='card')
 
         self.assertEqual(response.status_code, 201, response.data)
@@ -200,8 +223,7 @@ class BookingAPITests(TransactionTestCase):
         self.assertEqual(response.data['payment_status'], 'pending')
 
     def test_batch_booking_records_selected_payment_method(self):
-        response = self.client.post(
-            '/api/bookings/',
+        response = self.post_booking(
             {
                 'sport_id': self.sport.pk,
                 'participant_count': 2,
@@ -214,7 +236,6 @@ class BookingAPITests(TransactionTestCase):
                     'end_datetime': (self.start_datetime + timedelta(hours=1)).isoformat(),
                 }],
             },
-            format='json',
         )
 
         self.assertEqual(response.status_code, 201, response.data)
@@ -235,8 +256,7 @@ class BookingAPITests(TransactionTestCase):
             rate_snapshot='250.00',
             total_price='250.00',
         )
-        response = self.client.post(
-            '/api/bookings/',
+        response = self.post_booking(
             {
                 'sport_id': self.sport.pk,
                 'participant_count': 2,
@@ -255,15 +275,13 @@ class BookingAPITests(TransactionTestCase):
                     },
                 ],
             },
-            format='json',
         )
 
         self.assertEqual(response.status_code, 409)
         self.assertEqual(list(Booking.objects.values_list('pk', flat=True)), [existing.pk])
 
     def test_batch_booking_requires_valid_contact_details(self):
-        response = self.client.post(
-            '/api/bookings/',
+        response = self.post_booking(
             {
                 'sport_id': self.sport.pk,
                 'participant_count': 2,
@@ -275,7 +293,6 @@ class BookingAPITests(TransactionTestCase):
                     'end_datetime': (self.start_datetime + timedelta(hours=1)).isoformat(),
                 }],
             },
-            format='json',
         )
 
         self.assertEqual(response.status_code, 400)
@@ -325,7 +342,7 @@ class BookingAPITests(TransactionTestCase):
         conflict = self.create_booking(sport_id=pickleball.pk)
 
         self.assertEqual(conflict.status_code, 409)
-        self.assertEqual(Booking.objects.filter(status=Booking.Status.CONFIRMED).count(), 1)
+        self.assertEqual(Booking.objects.filter(status=Booking.Status.PENDING_VERIFICATION).count(), 1)
 
     def test_adjacent_one_hour_slots_do_not_conflict(self):
         first = self.create_booking()
@@ -338,7 +355,7 @@ class BookingAPITests(TransactionTestCase):
         )
 
         self.assertEqual(adjacent.status_code, 201)
-        self.assertEqual(Booking.objects.filter(status=Booking.Status.CONFIRMED).count(), 2)
+        self.assertEqual(Booking.objects.filter(status=Booking.Status.PENDING_VERIFICATION).count(), 2)
 
     def test_invalid_slot_duration_is_rejected(self):
         response = self.create_booking(
@@ -553,7 +570,7 @@ class BookingAPITests(TransactionTestCase):
                 client = APIClient()
                 client.force_authenticate(user=user)
                 barrier.wait(timeout=10)
-                response = client.post('/api/bookings/', payload, format='json')
+                response = self.post_booking(payload, client=client)
                 return response.status_code
             finally:
                 connections.close_all()
@@ -562,4 +579,4 @@ class BookingAPITests(TransactionTestCase):
             results = list(executor.map(lambda _: submit_booking(), range(2)))
 
         self.assertEqual(sorted(results), [201, 409])
-        self.assertEqual(Booking.objects.filter(status=Booking.Status.CONFIRMED).count(), 1)
+        self.assertEqual(Booking.objects.filter(status=Booking.Status.PENDING_VERIFICATION).count(), 1)

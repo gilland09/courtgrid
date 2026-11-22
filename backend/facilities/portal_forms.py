@@ -11,6 +11,7 @@ from .models import (
     FacilityClosure,
     FacilityOperatingHours,
     FacilityPhoto,
+    FacilityPaymentMethod,
     FacilitySport,
     Sport,
     STANDARD_AMENITIES,
@@ -213,29 +214,55 @@ class FacilityPhotoForm(forms.ModelForm):
                 field.widget.attrs.setdefault('class', 'form-control')
 
     def clean_image(self):
-        uploaded = self.cleaned_data['image']
-        extension = PurePath(uploaded.name).suffix.lower()
-        validators = {
-            '.png': ImageContentValidator.valid_png,
-            '.jpg': ImageContentValidator.valid_jpeg,
-            '.jpeg': ImageContentValidator.valid_jpeg,
-            '.webp': ImageContentValidator.valid_webp,
+        return validate_venue_image(self.cleaned_data['image'])
+
+
+def validate_venue_image(uploaded):
+    extension = PurePath(uploaded.name).suffix.lower()
+    validators = {
+        '.png': ImageContentValidator.valid_png,
+        '.jpg': ImageContentValidator.valid_jpeg,
+        '.jpeg': ImageContentValidator.valid_jpeg,
+        '.webp': ImageContentValidator.valid_webp,
+    }
+    validator = validators.get(extension)
+    if validator is None:
+        raise forms.ValidationError(
+            'Upload a JPG, JPEG, PNG, or WebP image.',
+        )
+    if uploaded.size > 5 * 1024 * 1024:
+        raise forms.ValidationError('The image must be 5 MB or smaller.')
+    try:
+        content = uploaded.read(5 * 1024 * 1024 + 1)
+    finally:
+        uploaded.seek(0)
+    if len(content) > 5 * 1024 * 1024 or not validator(content):
+        raise forms.ValidationError(
+            'The uploaded file is not a valid image matching its extension.',
+        )
+    return uploaded
+
+
+class FacilityPaymentMethodForm(forms.ModelForm):
+    class Meta:
+        model = FacilityPaymentMethod
+        fields = (
+            'label', 'account_name', 'account_number', 'qr_image',
+            'instructions', 'display_order',
+        )
+        widgets = {
+            'qr_image': forms.ClearableFileInput(attrs={'accept': '.jpg,.jpeg,.png,.webp'}),
         }
-        validator = validators.get(extension)
-        if validator is None:
-            raise forms.ValidationError(
-                'Upload a JPG, JPEG, PNG, or WebP image.',
-            )
-        if uploaded.size > 5 * 1024 * 1024:
-            raise forms.ValidationError('The image must be 5 MB or smaller.')
-        try:
-            content = uploaded.read(5 * 1024 * 1024 + 1)
-        finally:
-            uploaded.seek(0)
-        if len(content) > 5 * 1024 * 1024 or not validator(content):
-            raise forms.ValidationError(
-                'The uploaded file is not a valid image matching its extension.',
-            )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs.setdefault('class', 'form-control')
+
+    def clean_qr_image(self):
+        uploaded = self.cleaned_data.get('qr_image')
+        if uploaded and hasattr(uploaded, 'size') and not getattr(uploaded, '_committed', False):
+            return validate_venue_image(uploaded)
         return uploaded
 
 

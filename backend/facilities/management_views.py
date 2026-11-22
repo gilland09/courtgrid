@@ -18,6 +18,7 @@ from .models import (
     Facility,
     FacilityClosure,
     FacilityOperatingHours,
+    FacilityPaymentMethod,
     FacilitySport,
     ResourceSport,
     SportSchedule,
@@ -32,6 +33,7 @@ from .portal_forms import (
     FacilityOnboardingForm,
     FacilityOperatingHoursForm,
     FacilityPhotoForm,
+    FacilityPaymentMethodForm,
     FacilityPayoutWalletForm,
     FacilitySportForm,
 )
@@ -94,6 +96,7 @@ def owner_dashboard_context(user, onboarding_form=None):
         'resources',
         'operating_hours',
         'photos',
+        'payment_methods',
     )
     facility_panels = []
     for facility in facilities:
@@ -119,6 +122,16 @@ def owner_dashboard_context(user, onboarding_form=None):
             'court_add_form': CourtManagementForm(facility=facility),
             'photos': facility.photos.all(),
             'photo_form': FacilityPhotoForm(),
+            'payment_method_add_form': FacilityPaymentMethodForm(),
+            'payment_method_panels': [
+                {
+                    'method': method,
+                    'form': FacilityPaymentMethodForm(
+                        instance=method, prefix=f'payment-{method.pk}',
+                    ),
+                }
+                for method in facility.payment_methods.all()
+            ],
             'amenities_form': FacilityAmenitiesForm(
                 initial={'amenities': facility.amenities},
             ),
@@ -202,7 +215,7 @@ def create_closure_and_cancel_bookings(closure, user):
         closure.save()
         conflicting_bookings = Booking.objects.filter(
             resource__facility=facility,
-            status=Booking.Status.CONFIRMED,
+            status__in=(Booking.Status.CONFIRMED, Booking.Status.PENDING_VERIFICATION),
             start_datetime__lt=closure.end_datetime,
             end_datetime__gt=closure.start_datetime,
         )
@@ -265,6 +278,48 @@ def managed_facility_for_user(user, facility_id):
     }:
         raise PermissionDenied
     return get_object_or_404(owner_facilities(user), pk=facility_id)
+
+
+@require_POST
+@login_required(login_url='login')
+@transaction.atomic
+def owner_manage_payment_methods_view(request, facility_id):
+    facilities = Facility.objects.all() if request.user.is_superuser else Facility.objects.filter(
+        owner=request.user,
+    )
+    facility = get_object_or_404(facilities.select_for_update(), pk=facility_id)
+    action = request.POST.get('action')
+    if action in {'add', 'save'}:
+        method_id = request.POST.get('method_id')
+        instance = (
+            get_object_or_404(facility.payment_methods.select_for_update(), pk=method_id)
+            if action == 'save' else None
+        )
+        form = FacilityPaymentMethodForm(
+            request.POST, request.FILES, instance=instance,
+            prefix=f'payment-{method_id}' if instance else None,
+        )
+        if form.is_valid():
+            method = form.save(commit=False)
+            method.facility = facility
+            method.save()
+            messages.success(request, 'Payment method saved.')
+        else:
+            portal_error(request, form, 'Please correct the payment method details.')
+    elif action in {'toggle', 'delete'}:
+        method = get_object_or_404(
+            facility.payment_methods.select_for_update(), pk=request.POST.get('method_id'),
+        )
+        if action == 'toggle':
+            method.is_active = not method.is_active
+            method.save(update_fields=('is_active',))
+            messages.success(request, 'Payment method availability updated.')
+        else:
+            method.delete()
+            messages.success(request, 'Payment method deleted.')
+    else:
+        raise PermissionDenied('Unknown payment method management action.')
+    return redirect('owner_dashboard')
 
 
 @require_POST
@@ -575,15 +630,17 @@ def owner_dashboard_view(request):
                 booking = get_object_or_404(
                     Booking.objects.select_for_update().filter(
                         resource__facility__in=facilities,
-                        status=Booking.Status.CONFIRMED,
+                        status__in=(Booking.Status.CONFIRMED, Booking.Status.PENDING_VERIFICATION),
                         payment_status=Booking.PaymentStatus.PENDING,
                     ),
                     pk=request.POST.get('booking_id'),
                 )
+                booking.status = Booking.Status.CONFIRMED
                 booking.payment_status = Booking.PaymentStatus.PAID
                 booking.payment_verified_at = timezone.now()
                 booking.payment_verified_by = request.user
                 booking.save(update_fields=(
+                    'status',
                     'payment_status',
                     'payment_verified_at',
                     'payment_verified_by',

@@ -1,17 +1,27 @@
 const bookingsContainer = document.getElementById('bookings-container');
 const bookingTabs = document.getElementById('booking-tabs');
 const cancelModalElement = document.getElementById('cancel-booking-modal');
-const cancelModal = new bootstrap.Modal(cancelModalElement);
 const cancelSummary = document.getElementById('cancel-booking-summary');
 const cancelResult = document.getElementById('cancel-booking-result');
 const confirmCancelButton = document.getElementById('confirm-cancel-booking');
 const receiptModalElement = document.getElementById('booking-receipt-modal');
-const receiptModal = new bootstrap.Modal(receiptModalElement);
 const receiptContent = document.getElementById('booking-receipt-content');
 
 let allBookings = [];
 let currentTab = 'upcoming';
 let bookingToCancel = null;
+
+function openModal(modal) {
+    modal.classList.add('is-open');
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('cg-modal-open');
+}
+
+function closeModal(modal) {
+    modal.classList.remove('is-open');
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('cg-modal-open');
+}
 
 function getCsrfToken() {
     const cookie = document.cookie
@@ -77,7 +87,7 @@ function showReceipt(booking) {
             maya: 'Maya',
             card: 'Credit / Debit Card',
             cash: 'Pay at Venue',
-        })[booking.payment_method] || booking.payment_method,
+        })[booking.payment_method] || booking.payment_method_label || booking.payment_method,
     );
     addReceiptRow(
         'Payment status',
@@ -94,7 +104,7 @@ function showReceipt(booking) {
         ? `Payment verification recorded${booking.payment_verified_at ? ` on ${formatBookingDateTime(booking.payment_verified_at)}` : ''}.`
         : 'This is a reservation record, not proof of payment. The venue must verify any external wallet transfer.';
     receiptContent.append(notice);
-    receiptModal.show();
+    openModal(receiptModalElement);
 }
 
 function addBookingDetail(container, label, value) {
@@ -112,11 +122,11 @@ function partitionBookings() {
     const now = Date.now();
     return {
         upcoming: allBookings.filter((booking) => (
-            booking.status === 'CONFIRMED'
+            (booking.status === 'CONFIRMED' || booking.status === 'PENDING_VERIFICATION')
             && new Date(booking.start_datetime).getTime() > now
         )),
         past: allBookings.filter((booking) => (
-            booking.status !== 'CONFIRMED'
+            (booking.status !== 'CONFIRMED' && booking.status !== 'PENDING_VERIFICATION')
             || new Date(booking.start_datetime).getTime() <= now
         )),
     };
@@ -204,8 +214,9 @@ function renderBookings() {
         court.textContent = booking.resource_name;
         titleGroup.append(title, court);
         const status = document.createElement('span');
-        status.className = `reservation-status ${booking.status === 'CONFIRMED' ? 'is-confirmed' : 'is-cancelled'}`;
-        status.textContent = booking.status === 'CONFIRMED' ? 'Confirmed' : 'Cancelled';
+        status.className = `reservation-status ${booking.status === 'CONFIRMED' ? 'is-confirmed' : booking.status === 'PENDING_VERIFICATION' ? 'is-pending' : 'is-cancelled'}`;
+        status.textContent = booking.status === 'CONFIRMED' ? 'Confirmed'
+            : booking.status === 'PENDING_VERIFICATION' ? 'Awaiting Owner Verification' : 'Cancelled';
         top.append(titleGroup, status);
         body.append(top);
 
@@ -216,6 +227,11 @@ function renderBookings() {
             `${formatBookingDateTime(booking.start_datetime)} – ${formatBookingDateTime(booking.end_datetime)}`,
         );
         addBookingDetail(body, 'Participants', String(booking.participant_count));
+        if (booking.booking_type === 'organizer') {
+            addBookingDetail(body, 'Organization', booking.organization_name);
+            addBookingDetail(body, 'Event', booking.event_name);
+            addBookingDetail(body, 'Expected participants', String(booking.expected_participants));
+        }
         addBookingDetail(body, 'Price', `${booking.currency} ${booking.total_price}`);
         const paymentMethods = {
             gcash: 'GCash',
@@ -226,7 +242,7 @@ function renderBookings() {
         addBookingDetail(
             body,
             'Payment method',
-            paymentMethods[booking.payment_method] || booking.payment_method || 'GCash',
+            booking.payment_method_label || paymentMethods[booking.payment_method] || booking.payment_method,
         );
         const paymentBadge = document.createElement('span');
         paymentBadge.className = 'payment-receipt-badge mb-2';
@@ -248,11 +264,18 @@ function renderBookings() {
         receiptButton.type = 'button';
         receiptButton.className = 'btn btn-outline-primary booking-receipt-button mt-2';
         receiptButton.dataset.bookingId = booking.id;
-        receiptButton.textContent = 'View Receipt';
+        receiptButton.textContent = 'View Reservation';
         body.append(receiptButton);
+        if (booking.payment_receipt_url) {
+            const uploadedReceipt = document.createElement('a');
+            uploadedReceipt.className = 'btn btn-outline-primary mt-2 ms-2';
+            uploadedReceipt.href = booking.payment_receipt_url;
+            uploadedReceipt.textContent = 'View Receipt';
+            body.append(uploadedReceipt);
+        }
 
         if (
-            booking.status === 'CONFIRMED'
+            (booking.status === 'CONFIRMED' || booking.status === 'PENDING_VERIFICATION')
             && new Date(booking.start_datetime).getTime() > Date.now()
         ) {
             const cancelButton = document.createElement('button');
@@ -320,7 +343,7 @@ function openCancelModal(booking) {
     bookingToCancel = booking;
     cancelSummary.textContent = `${booking.resource_name} · ${formatBookingDateTime(booking.start_datetime)}.`;
     cancelResult.replaceChildren();
-    cancelModal.show();
+    openModal(cancelModalElement);
 }
 
 async function cancelBooking() {
@@ -364,7 +387,7 @@ async function cancelBooking() {
                 : booking
         ));
         renderBookings();
-        window.setTimeout(() => cancelModal.hide(), 900);
+        window.setTimeout(() => closeModal(cancelModalElement), 900);
     } catch (error) {
         console.error('Unable to cancel booking.', error);
         showCancelMessage('The cancellation request could not be sent. Please try again.');

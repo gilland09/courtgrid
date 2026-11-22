@@ -31,6 +31,8 @@ secrets/
 *.sqlite3
 local_data/
 /data/private/
+/backend/private_receipts/
+/backend/media/private_receipts/
 *.log
 .idea/
 Thumbs.db

@@ -1,9 +1,11 @@
 from datetime import datetime, time, timedelta
 from decimal import Decimal
+from tempfile import TemporaryDirectory
 
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
-from django.test import TestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from bookings.models import Booking
@@ -13,6 +15,7 @@ from .models import (
     BookableResource,
     Facility,
     FacilityOperatingHours,
+    FacilityPaymentMethod,
     FacilitySport,
     ResourceSport,
     Sport,
@@ -120,6 +123,11 @@ class SeedCourtGridCommandTests(TestCase):
         )
 
         facility = Facility.objects.get(name="Tonio's Dink District")
+        self.assertFalse(facility.has_arranged_payment_method)
+        method = FacilityPaymentMethod.objects.create(
+            facility=facility, label='Test wallet', account_name='Test',
+            account_number='12345',
+        )
         resource = facility.resources.get(name='Court 1')
         sport = Sport.objects.get(slug='pickleball')
         start = timezone.make_aware(datetime.combine(
@@ -132,16 +140,20 @@ class SeedCourtGridCommandTests(TestCase):
                 password='test-password',
             )
         )
-        response = self.client.post(
-            '/api/bookings/',
-            {
-                'resource_id': resource.pk,
-                'sport_id': sport.pk,
-                'start_datetime': start.isoformat(),
-                'end_datetime': (start + timedelta(hours=1)).isoformat(),
-                'participant_count': 4,
-            },
-            content_type='application/json',
-        )
+        with TemporaryDirectory() as directory, override_settings(PRIVATE_RECEIPT_ROOT=directory):
+            response = self.client.post(
+                '/api/bookings/',
+                {
+                    'resource_id': resource.pk,
+                    'sport_id': sport.pk,
+                    'start_datetime': start.isoformat(),
+                    'end_datetime': (start + timedelta(hours=1)).isoformat(),
+                    'participant_count': 4,
+                    'booking_type': 'player',
+                    'payment_method_used': method.pk,
+                    'policy_accepted': 'true',
+                    'payment_receipt': SimpleUploadedFile('receipt.pdf', b'%PDF-1.4 test'),
+                },
+            )
         self.assertEqual(response.status_code, 201, response.content)
         self.assertEqual(response.json()['rate_snapshot'], '200.00')

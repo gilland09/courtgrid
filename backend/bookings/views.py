@@ -1,6 +1,11 @@
+import json
+from pathlib import PurePath
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
+from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -12,13 +17,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from facilities.availability import slot_unavailability_reason
-from facilities.models import BookableResource, Facility, FacilitySport, ResourceSport
+from facilities.models import BookableResource, Facility, FacilityPaymentMethod, FacilitySport, ResourceSport
 
 from .models import Booking
 from .serializers import (
     BatchCreateBookingSerializer,
     BookingSerializer,
     CreateBookingSerializer,
+    PaymentFirstSerializer,
 )
 
 
@@ -98,7 +104,6 @@ class BookingCreateView(APIView):
                 raise ValidationError({
                     'resource_id': 'The requested facility is not currently bookable.'
                 }) from exc
-            requested_payment_method = requested.get('payment_method')
             try:
                 resource = (
                     BookableResource.objects.select_for_update()
@@ -113,17 +118,6 @@ class BookingCreateView(APIView):
                 raise ValidationError({
                     'resource_id': 'The requested resource is not currently bookable.'
                 }) from exc
-
-            payment_method = (
-                requested_payment_method
-                or resource.facility.available_payment_methods[0]
-            )
-            if payment_method not in resource.facility.available_payment_methods:
-                raise ValidationError({
-                    'payment_method': (
-                        'This facility does not accept the selected payment method.'
-                    )
-                })
 
             sport = requested['sport']
             if not sport.is_active:
@@ -184,7 +178,7 @@ class BookingCreateView(APIView):
             end_datetime = requested['end_datetime']
             has_overlap = Booking.objects.filter(
                 resource=resource,
-                status=Booking.Status.CONFIRMED,
+                status__in=(Booking.Status.CONFIRMED, Booking.Status.PENDING_VERIFICATION),
                 start_datetime__lt=end_datetime,
                 end_datetime__gt=start_datetime,
             ).exists()
@@ -201,17 +195,41 @@ class BookingCreateView(APIView):
                 participant_names=requested.get('participant_names', ''),
                 contact_email=requested.get('contact_email', ''),
                 contact_phone=requested.get('contact_phone', ''),
-                status=Booking.Status.CONFIRMED,
+                status=Booking.Status.PENDING_VERIFICATION,
                 rate_snapshot=hourly_rate,
                 total_price=hourly_rate,
-                payment_method=payment_method,
+                payment_method=requested['payment_method_label'].lower()[:24],
+                booking_type=requested['booking_type'],
+                organization_name=requested.get('organization_name', ''),
+                event_name=requested.get('event_name', ''),
+                expected_participants=requested.get('expected_participants'),
+                payment_method_used=requested['payment_method_used'],
+                payment_method_label=requested['payment_method_label'],
+                payment_account_number=requested['payment_account_number'],
+                policy_accepted=True,
             )
 
         return booking
 
     def post(self, request):
-        if 'slots' in request.data:
-            batch_serializer = BatchCreateBookingSerializer(data=request.data)
+        if not (request.content_type or '').startswith('multipart/form-data'):
+            raise ValidationError({'detail': 'Submit the booking as multipart form data with a receipt.'})
+        payment_serializer = PaymentFirstSerializer(data=request.data)
+        payment_serializer.is_valid(raise_exception=True)
+        payment = payment_serializer.validated_data
+        is_batch = 'slots' in request.data
+        if is_batch:
+            try:
+                slots = json.loads(request.data['slots'])
+            except (TypeError, ValueError) as exc:
+                raise ValidationError({'slots': 'Submit slots as a JSON array.'}) from exc
+            batch_data = {
+                key: request.data.get(key)
+                for key in ('sport_id', 'participant_count', 'participant_names', 'contact_email', 'contact_phone')
+                if key in request.data
+            }
+            batch_data['slots'] = slots
+            batch_serializer = BatchCreateBookingSerializer(data=batch_data)
             batch_serializer.is_valid(raise_exception=True)
             batch = batch_serializer.validated_data
             validated_slots = []
@@ -225,42 +243,102 @@ class BookingCreateView(APIView):
                     'participant_names': batch.get('participant_names', ''),
                     'contact_email': batch['contact_email'],
                     'contact_phone': batch['contact_phone'],
-                    'payment_method': (
-                        batch.get('payment_method')
-                        or slot['resource_id'].facility.available_payment_methods[0]
-                    ),
                 })
                 serializer.is_valid(raise_exception=True)
                 validated_slots.append(serializer.validated_data)
 
-            validated_slots.sort(
-                key=lambda slot: (
-                    slot['resource'].pk,
-                    slot['start_datetime'],
-                )
-            )
-            with transaction.atomic():
-                bookings = [
-                    self.create_booking(slot, request.user)
-                    for slot in validated_slots
-                ]
+        else:
+            serializer = CreateBookingSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            validated_slots = [serializer.validated_data]
 
-            serialized_bookings = BookingSerializer(bookings, many=True).data
+        facility_ids = {slot['resource'].facility_id for slot in validated_slots}
+        court_ids = {slot['resource'].pk for slot in validated_slots}
+        if len(facility_ids) != 1:
+            raise ValidationError({'slots': 'All courts must belong to the same facility.'})
+        if payment['booking_type'] == Booking.BookingType.PLAYER and len(court_ids) != 1:
+            raise ValidationError({'slots': 'Players can book only one court per reservation.'})
+        validated_slots.sort(key=lambda slot: (slot['resource'].pk, slot['start_datetime']))
+        saved_receipt_name = None
+        storage = Booking._meta.get_field('payment_receipt').storage
+        try:
+            with transaction.atomic():
+                facility = Facility.objects.select_for_update().get(pk=next(iter(facility_ids)))
+                method = FacilityPaymentMethod.objects.select_for_update().filter(
+                    pk=payment['payment_method_used'], facility=facility, is_active=True,
+                ).first()
+                if method is None:
+                    raise ValidationError({'payment_method_used': 'Select an active payment method for this facility.'})
+                for slot in validated_slots:
+                    slot.update({
+                        **payment,
+                        'payment_method_used': method,
+                        'payment_method_label': method.label,
+                        'payment_account_number': method.account_number,
+                    })
+                bookings = [self.create_booking(slot, request.user) for slot in validated_slots]
+                if 'expected_total' in payment and sum(
+                    booking.total_price for booking in bookings
+                ) != payment['expected_total']:
+                    raise BookingConflict('The displayed price is no longer current. Contact the venue before resubmitting.')
+                field = Booking._meta.get_field('payment_receipt')
+                receipt = payment['payment_receipt']
+                saved_receipt_name = storage.save(field.generate_filename(bookings[0], receipt.name), receipt)
+                uploaded_at = timezone.now()
+                Booking.objects.filter(pk__in=[booking.pk for booking in bookings]).update(
+                    payment_receipt=saved_receipt_name,
+                    payment_receipt_uploaded_at=uploaded_at,
+                )
+                for booking in bookings:
+                    booking.payment_receipt.name = saved_receipt_name
+                    booking.payment_receipt_uploaded_at = uploaded_at
+        except Exception:
+            if saved_receipt_name:
+                storage.delete(saved_receipt_name)
+            raise
+
+        if is_batch:
             return Response({
-                'results': serialized_bookings,
+                'results': BookingSerializer(bookings, many=True).data,
                 'total_price': str(sum(
                     (booking.total_price for booking in bookings),
                     start=bookings[0].total_price * 0,
                 )),
             }, status=status.HTTP_201_CREATED)
-
-        serializer = CreateBookingSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        booking = self.create_booking(serializer.validated_data, request.user)
         return Response(
-            BookingSerializer(booking).data,
+            BookingSerializer(bookings[0]).data,
             status=status.HTTP_201_CREATED,
         )
+
+
+@login_required(login_url='login')
+def booking_receipt_file(request, booking_id):
+    booking = get_object_or_404(
+        Booking.objects.select_related('resource__facility'), pk=booking_id,
+    )
+    if not (
+        request.user.is_superuser
+        or booking.user_id == request.user.pk
+        or booking.resource.facility.owner_id == request.user.pk
+    ):
+        raise PermissionDenied
+    if not booking.payment_receipt:
+        raise Http404('Receipt not found.')
+    content_types = {
+        '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+        '.png': 'image/png', '.pdf': 'application/pdf',
+    }
+    content_type = content_types.get(PurePath(booking.payment_receipt.name).suffix.lower())
+    if not content_type:
+        raise Http404('Receipt not found.')
+    try:
+        receipt = booking.payment_receipt.open('rb')
+    except FileNotFoundError as exc:
+        raise Http404('Receipt not found.') from exc
+    response = FileResponse(receipt, content_type=content_type)
+    response['X-Content-Type-Options'] = 'nosniff'
+    response['Cache-Control'] = 'private, no-store'
+    return response
 
 
 class BookingCancelView(APIView):
@@ -276,8 +354,8 @@ class BookingCancelView(APIView):
             except Booking.DoesNotExist as exc:
                 raise NotFound('Booking not found.') from exc
 
-            if booking.status != Booking.Status.CONFIRMED:
-                raise BookingConflict('Only confirmed bookings can be cancelled.')
+            if booking.status not in (Booking.Status.CONFIRMED, Booking.Status.PENDING_VERIFICATION):
+                raise BookingConflict('Only active bookings can be cancelled.')
             if booking.start_datetime <= timezone.now():
                 raise ValidationError({
                     'booking': 'A booking cannot be cancelled after it has started.'

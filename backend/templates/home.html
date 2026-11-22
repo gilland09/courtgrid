@@ -67,6 +67,31 @@
 </div>
 {% endblock %}
 
+{% block modals %}
+<div class="cg-modal-overlay" id="booking-role-modal" aria-hidden="true">
+    <div class="cg-modal-card cg-role-card" role="dialog" aria-modal="true" aria-labelledby="booking-role-title">
+        <div class="cg-role-header">
+            <div>
+                <p class="cg-step-label">Choose your booking type</p>
+                <h2 id="booking-role-title">How are you booking today?</h2>
+                <p id="booking-role-venue" class="text-body-secondary"></p>
+            </div>
+            <button type="button" class="btn-close" data-modal-close aria-label="Close"></button>
+        </div>
+        <div class="cg-role-options">
+            <a id="role-player-link" class="cg-role-option" href="#">
+                <strong>Book as Player Only</strong>
+                <span>Players can only book 1 court per reservation.</span>
+            </a>
+            <a id="role-organizer-link" class="cg-role-option" href="#">
+                <strong>Book as Club / Organizer</strong>
+                <span>Clubs and organizers can book multiple courts at once.</span>
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
 {% block scripts %}
 <script src="{% static 'js/discovery.js' %}"></script>
 {% endblock %}

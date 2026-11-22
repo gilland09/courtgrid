@@ -4,7 +4,7 @@
 {% block title %}{{ facility.name }} | CourtGrid{% endblock %}
 
 {% block content %}
-<section id="facility-detail" class="facility-page mb-5" data-facility-id="{{ facility.pk }}" data-facility-name="{{ facility.name }}" data-payment-methods="{{ available_payment_methods|join:',' }}" data-wallet-account-name="{{ facility.wallet_account_name }}" data-merchant-gcash="{{ facility.gcash_number }}" data-merchant-maya="{{ facility.maya_number }}" data-merchant-qr="{% if facility.payment_qr_image %}{{ facility.payment_qr_image.url }}{% endif %}">
+<section id="facility-detail" class="facility-page mb-5" data-facility-id="{{ facility.pk }}" data-facility-name="{{ facility.name }}" data-authenticated="{% if user.is_authenticated %}true{% else %}false{% endif %}" data-customer-name="{% if user.is_authenticated %}{{ user.get_full_name|default:user.username }}{% endif %}">
     <a href="{% url 'home' %}" class="link-secondary text-decoration-none">&larr; Back to facilities</a>
     <header class="facility-detail-header mt-3">
         <div>
@@ -13,19 +13,14 @@
             <p class="text-body-secondary mb-0">{{ facility.barangay|default:"Naval" }}, Biliran <span class="mx-1">&middot;</span> {{ facility.capacity|default:"Flexible" }} venue capacity</p>
         </div>
         <div class="d-flex flex-wrap gap-2">
-            {% for facility_sport in facility_sports %}
-                <span class="sport-badge">{{ facility_sport.sport.name }}</span>
-            {% endfor %}
+            {% for facility_sport in facility_sports %}<span class="sport-badge">{{ facility_sport.sport.name }}</span>{% endfor %}
         </div>
     </header>
 
     {% if facility_photos %}
         <section class="venue-gallery mt-4" aria-labelledby="venue-gallery-heading">
             <div class="d-flex justify-content-between align-items-end mb-3">
-                <div>
-                    <p class="text-uppercase small fw-semibold text-body-secondary mb-1">Inside the venue</p>
-                    <h2 id="venue-gallery-heading" class="h4 mb-0">Venue photo gallery</h2>
-                </div>
+                <div><p class="text-uppercase small fw-semibold text-body-secondary mb-1">Inside the venue</p><h2 id="venue-gallery-heading" class="h4 mb-0">Venue photo gallery</h2></div>
                 <span class="small text-body-secondary">{{ facility_photos|length }} photos</span>
             </div>
             <a class="venue-gallery-cover" href="{{ facility_photos.0.image.url }}" target="_blank" rel="noopener">
@@ -55,232 +50,171 @@
                                     {% if court.sports %}{{ court.sports|join:", " }}{% else %}Sports not listed{% endif %}
                                     · Capacity {{ court.resource.capacity|default:facility.capacity|default:"Flexible" }}
                                     {% if court.rates %}<br>
-                                        {% for rate in court.rates %}
-                                            {{ rate.sport }}:
-                                            {% if rate.has_amount %}₱{{ rate.amount|floatformat:2 }}/hr{% else %}Rate not listed{% endif %}
-                                            {% if not forloop.last %} · {% endif %}
-                                        {% endfor %}
-                                    {% elif court.has_rate %}<br>₱{{ court.hourly_rate|floatformat:2 }}/hr
-                                    {% endif %}
+                                        {% for rate in court.rates %}{{ rate.sport }}: {% if rate.has_amount %}₱{{ rate.amount|floatformat:2 }}/hr{% else %}Rate not listed{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}
+                                    {% elif court.has_rate %}<br>₱{{ court.hourly_rate|floatformat:2 }}/hr{% endif %}
                                 </p>
                             </div>
                         </article>
-                    {% empty %}
-                        <p class="text-body-secondary mb-0">Court details are not listed yet.</p>
-                    {% endfor %}
+                    {% empty %}<p class="text-body-secondary mb-0">Court details are not listed yet.</p>{% endfor %}
                 </div>
             </div>
         </section>
         <section class="col-lg-5" aria-labelledby="facility-amenities-heading">
             <div class="p-3 border rounded-3 h-100">
                 <h2 id="facility-amenities-heading" class="h5">Venue amenities</h2>
-                {% if amenities %}
-                    <ul class="facility-amenity-list">
-                        {% for amenity in amenities %}<li>{{ amenity }}</li>{% endfor %}
-                    </ul>
-                {% else %}
-                    <p class="text-body-secondary mb-0">Amenities have not been listed.</p>
-                {% endif %}
+                {% if amenities %}<ul class="facility-amenity-list">{% for amenity in amenities %}<li>{{ amenity }}</li>{% endfor %}</ul>
+                {% else %}<p class="text-body-secondary mb-0">Amenities have not been listed.</p>{% endif %}
             </div>
         </section>
     </div>
 
-    <section class="when-card mt-4 mb-4" aria-labelledby="when-heading">
-        <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
-            <div>
-                <p class="text-uppercase small fw-semibold text-body-secondary mb-1">Plan your game</p>
-                <h2 id="when-heading" class="h4 mb-0">When</h2>
-            </div>
-            <div class="d-flex align-items-center gap-2">
-                <label for="availability-sport" class="form-label mb-0">Sport</label>
-                <select id="availability-sport" class="form-select">
-                    {% for facility_sport in facility_sports %}
-                        <option value="{{ facility_sport.sport_id }}">{{ facility_sport.sport.name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
+    <section id="mode-selector" class="cg-flow-card mt-4" aria-labelledby="mode-title" hidden>
+        <h2 id="mode-title" class="h5">How are you booking today?</h2>
+        <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-outline-primary" href="?mode=player">Player Only · 1 court</a>
+            <a class="btn btn-outline-primary" href="?mode=organizer">Club / Organizer · Multiple courts</a>
         </div>
-        <div id="quick-date-pills" class="quick-date-pills" role="group" aria-label="Choose a date"></div>
-        <input id="availability-date" type="date" class="visually-hidden" value="{{ today }}" aria-label="Selected date">
     </section>
 
-    <section class="operating-hours-card mb-4" aria-labelledby="operating-hours-heading">
-        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-            <h2 id="operating-hours-heading" class="h6 mb-0">Weekly operating hours</h2>
-            <span class="small text-body-secondary">Local time · Asia/Manila</span>
+    <form id="organizer-form" class="cg-flow-card mt-4" hidden>
+        <p class="cg-step-label">Step 1 · Club details</p>
+        <h2 class="h5">Tell us about your club or event</h2>
+        <div class="row g-3">
+            <div class="col-md-5"><label class="form-label" for="organization-name">Club / Organization Name</label><input id="organization-name" class="form-control" maxlength="150" required></div>
+            <div class="col-md-5"><label class="form-label" for="event-name">Event Name</label><input id="event-name" class="form-control" maxlength="150" required></div>
+            <div class="col-md-2"><label class="form-label" for="expected-participants">Participants</label><input id="expected-participants" type="number" class="form-control" min="1" max="2147483647" step="1" required></div>
         </div>
-        <div class="operating-hours-list">
-            {% for hours in operating_hours %}
-                <div class="operating-hour-row">
-                    <span>{{ hours.get_day_of_week_display }}</span>
-                    <strong>{{ hours.start_time|time:"g:i A" }}&ndash;{{ hours.end_time|time:"g:i A" }}</strong>
+        <button class="btn btn-primary mt-3" type="submit">Continue to courts</button>
+    </form>
+
+    <div id="booking-flow" hidden>
+        <div class="cg-progress mt-4" aria-label="Booking steps">
+            <span id="progress-one">1 Date &amp; court</span><span id="progress-two">2 Your details</span><span>3 Review &amp; pay</span>
+        </div>
+        <p id="booking-mode-note" class="cg-mode-note mt-3"></p>
+        <p id="switch-organizer" class="small" hidden><a href="?mode=organizer">Switch to Club / Organizer</a></p>
+        {% if not payment_methods %}
+            <div class="alert alert-warning">This venue has not arranged a payment method yet. Contact the venue for payment details.</div>
+        {% endif %}
+        <section class="when-card mt-4 mb-4" aria-labelledby="when-heading">
+            <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
+                <div><p class="text-uppercase small fw-semibold text-body-secondary mb-1">Plan your game</p><h2 id="when-heading" class="h4 mb-0">When</h2></div>
+                <div class="d-flex align-items-center gap-2">
+                    <label for="availability-sport" class="form-label mb-0">Sport</label>
+                    <select id="availability-sport" class="form-select">{% for facility_sport in facility_sports %}<option value="{{ facility_sport.sport_id }}">{{ facility_sport.sport.name }}</option>{% endfor %}</select>
                 </div>
-            {% empty %}
-                <p class="text-body-secondary mb-0">Operating hours have not been listed.</p>
-            {% endfor %}
-        </div>
-    </section>
+            </div>
+            <div id="quick-date-pills" class="quick-date-pills" role="group" aria-label="Choose a date"></div>
+            <label for="availability-date" class="form-label mt-3">Choose another date</label>
+            <input id="availability-date" type="date" class="form-control" value="{{ today }}" min="{{ today }}">
+        </section>
 
-    <section aria-labelledby="availability-heading">
-        <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-3">
-            <div>
-                <p class="text-uppercase small fw-semibold text-body-secondary mb-1">Live availability</p>
-                <h2 id="availability-heading" class="h4 mb-0">Court schedule</h2>
+        <section class="operating-hours-card mb-4" aria-labelledby="operating-hours-heading">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2"><h2 id="operating-hours-heading" class="h6 mb-0">Weekly operating hours</h2><span class="small text-body-secondary">Local time · Asia/Manila</span></div>
+            <div class="operating-hours-list">
+                {% for hours in operating_hours %}<div class="operating-hour-row"><span>{{ hours.get_day_of_week_display }}</span><strong>{{ hours.start_time|time:"g:i A" }}&ndash;{{ hours.end_time|time:"g:i A" }}</strong></div>
+                {% empty %}<p class="text-body-secondary mb-0">Operating hours have not been listed.</p>{% endfor %}
             </div>
-            <div class="schedule-legend" aria-label="Schedule legend">
-                <span><i class="legend-dot available"></i> Available</span>
-                <span><i class="legend-dot selected"></i> Selected</span>
-                <span><i class="legend-dot unavailable"></i> Booked / Closed</span>
-                <span><i class="legend-dot passed"></i> Passed</span>
+        </section>
+
+        <form id="range-form" class="cg-flow-card mb-4">
+            <h2 class="h5">Date-range quick-add</h2>
+            <p class="small text-body-secondary">Check up to 14 days at once. Choose a time window and one or more courts.</p>
+            <div class="row g-3">
+                <div class="col-sm-6 col-lg-3"><label class="form-label" for="range-start">Start date</label><input id="range-start" type="date" class="form-control" value="{{ today }}" min="{{ today }}" required></div>
+                <div class="col-sm-6 col-lg-3"><label class="form-label" for="range-end">End date</label><input id="range-end" type="date" class="form-control" value="{{ today }}" min="{{ today }}" required></div>
+                <div class="col-sm-6 col-lg-3"><label class="form-label" for="range-start-time">From</label><input id="range-start-time" type="time" class="form-control" value="08:00" step="3600" required></div>
+                <div class="col-sm-6 col-lg-3"><label class="form-label" for="range-end-time">Until</label><input id="range-end-time" type="time" class="form-control" value="18:00" step="3600" required></div>
+                <div class="col-12"><label class="form-label" for="range-courts">Courts</label><select id="range-courts" class="form-select" multiple required>{% for court in facility_courts %}<option value="{{ court.resource.pk }}">{{ court.resource.name }}</option>{% endfor %}</select><div class="form-text">Use Ctrl or Command to select multiple courts for a club booking.</div></div>
             </div>
-        </div>
-        <form id="booking-csrf-form" class="d-none">{% csrf_token %}</form>
-        <div id="availability-results" aria-live="polite">
-            <p class="text-body-secondary">Choose a date to view available courts.</p>
-        </div>
-    </section>
+            <button type="submit" class="btn btn-outline-primary mt-3">Check &amp; add available slots</button>
+            <div id="range-result" class="mt-2" role="status" aria-live="polite"></div>
+        </form>
+
+        <section aria-labelledby="availability-heading">
+            <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-3">
+                <div><p class="text-uppercase small fw-semibold text-body-secondary mb-1">Live availability</p><h2 id="availability-heading" class="h4 mb-0">Court schedule</h2></div>
+                <div class="schedule-legend"><span><i class="legend-dot available"></i> Available</span><span><i class="legend-dot selected"></i> Selected</span><span><i class="legend-dot unavailable"></i> Booked / Closed</span><span><i class="legend-dot passed"></i> Passed</span></div>
+            </div>
+            <div id="court-switch-notice" class="alert alert-warning" hidden>
+                Players can select only one court. <button id="replace-court" type="button" class="btn btn-sm btn-outline-primary">Switch courts and replace cart</button> or <a href="?mode=organizer">switch to Club / Organizer</a>.
+            </div>
+            <div id="availability-results" aria-live="polite"><p class="text-body-secondary">Choose a date to view available courts.</p></div>
+        </section>
+
+        <section class="cg-flow-card mt-4" aria-labelledby="cart-heading">
+            <div class="d-flex justify-content-between gap-2"><h2 id="cart-heading" class="h5">Booking Cart</h2><strong id="cart-total">₱0.00</strong></div>
+            <div id="booking-cart" aria-live="polite"></div>
+            {% if not user.is_authenticated %}<p class="small"><a href="{% url 'login' %}">Sign in</a> to submit a booking.</p>{% endif %}
+            <button id="continue-booking" type="button" class="btn btn-primary mt-3" disabled>Proceed to Review &amp; Pay</button>
+        </section>
+    </div>
+    <form id="booking-csrf-form" class="d-none">{% csrf_token %}</form>
 </section>
-
-<div id="selected-slot-bar" class="selected-slot-bar booking-sticky-bar" hidden>
-    <span id="selected-slot-label">1 slot selected</span>
-    <button id="continue-booking" type="button" class="btn btn-primary">Continue to Confirm</button>
-</div>
-
-<div class="modal fade" id="booking-modal" tabindex="-1" aria-labelledby="booking-modal-title" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <section class="modal-content booking-modal-content">
-            <div class="modal-header border-0 pb-0">
-                <div>
-                    <p class="text-uppercase small fw-semibold text-body-secondary mb-1">Your reservation</p>
-                    <h2 class="modal-title h4" id="booking-modal-title">Confirm your booking</h2>
-                </div>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <div id="booking-summary" class="booking-summary mb-3"></div>
-                <div id="booking-result" class="mb-3" aria-live="polite"></div>
-                <form id="booking-confirm-form" novalidate>
-                    <div id="booking-fields">
-                        <div class="mb-3">
-                            <label for="participant-count" class="form-label">Number of participants</label>
-                            <input id="participant-count" name="participant_count" type="number" class="form-control" min="1" value="1" required>
-                            <div id="participant-capacity-help" class="form-text"></div>
-                        </div>
-                        <fieldset class="mb-3">
-                            <legend class="form-label mb-1">Player names <span class="text-body-secondary">(optional)</span></legend>
-                            <div id="player-names-grid" class="player-names-grid"></div>
-                        </fieldset>
-                        <div class="row g-3">
-                            <div class="col-sm-6">
-                                <label for="booker-email" class="form-label">Contact email <span class="text-danger fw-bold">*</span></label>
-                                <input id="booker-email" name="contact_email" type="email" class="form-control" value="{{ booker_email }}" autocomplete="email" required aria-describedby="booker-email-error">
-                                <div id="booker-email-error" class="invalid-feedback"></div>
-                            </div>
-                            <div class="col-sm-6">
-                                <label for="booker-phone" class="form-label">Phone <span class="text-danger fw-bold">*</span></label>
-                                <input id="booker-phone" name="contact_phone" type="tel" class="form-control" value="{{ booker_phone }}" autocomplete="tel" required aria-describedby="booker-phone-error">
-                                <div id="booker-phone-error" class="invalid-feedback"></div>
-                            </div>
-                        </div>
-                        <fieldset class="payment-method-section mt-4">
-                            <legend class="form-label">Payment method</legend>
-                            <div class="payment-method-options">
-                                <label class="payment-method-option">
-                                    <input type="radio" name="payment_method" value="gcash" checked>
-                                    <span><strong>GCash</strong><small>Instant e-Wallet</small></span>
-                                </label>
-                                <label class="payment-method-option">
-                                    <input type="radio" name="payment_method" value="maya">
-                                    <span><strong>Maya</strong><small>Instant e-Wallet</small></span>
-                                </label>
-                                <label class="payment-method-option">
-                                    <input type="radio" name="payment_method" value="card">
-                                    <span><strong>Card</strong><small>Arrange payment with venue</small></span>
-                                </label>
-                                <label class="payment-method-option">
-                                    <input type="radio" name="payment_method" value="cash">
-                                    <span><strong>Pay at Venue</strong><small>Cash on arrival</small></span>
-                                </label>
-                            </div>
-                            <p class="form-text mt-2 mb-0">Only methods configured by this venue are shown. GCash/Maya transfers and any card payment are arranged directly with the venue and must be verified there; CourtGrid does not process payments or collect wallet PINs, OTPs, or card details.</p>
-                        </fieldset>
-                        <section class="payment-breakdown mt-3" aria-label="Price breakdown">
-                            <div><span id="rental-breakdown-label">Court Rental (0 slots)</span><strong id="rental-breakdown-amount">₱0.00</strong></div>
-                            <div><span>Included Platform &amp; Service Fee (5%)</span><strong id="platform-fee-breakdown">₱0.00</strong></div>
-                            <div class="payment-breakdown-total"><span>Total Due</span><strong id="total-due-breakdown">₱0.00</strong></div>
-                        </section>
-                        {% if not user.is_authenticated %}
-                            <p class="small text-body-secondary mt-3 mb-0">Sign in to confirm your reservation.</p>
-                        {% endif %}
-                        <div class="d-flex gap-2 mt-4">
-                            <button type="button" class="btn btn-outline-secondary flex-fill" data-bs-dismiss="modal">Cancel</button>
-                            <button id="confirm-booking" type="submit" class="btn btn-primary flex-fill">Proceed to Checkout</button>
-                        </div>
-                    </div>
-                </form>
-                <section id="payment-gateway" class="checkout-panel" hidden aria-labelledby="gateway-title">
-                    <div class="checkout-banner" id="gateway-banner">
-                        <p class="text-uppercase small fw-semibold mb-1">CourtGrid checkout</p>
-                        <h3 id="gateway-title" class="h5 mb-0">Reservation checkout</h3>
-                    </div>
-                    <div class="checkout-panel-body">
-                        <p class="payment-processing-notice" role="note">Wallet and card payments are arranged directly with the venue and remain pending until venue verification. Never enter a wallet PIN, OTP, or card information on CourtGrid.</p>
-                        <div class="checkout-merchant-details">
-                            <div><span>Merchant</span><strong id="gateway-merchant"></strong></div>
-                            <div><span>Selected method</span><strong id="gateway-method"></strong></div>
-                            <div class="checkout-amount"><span>Reservation amount</span><strong id="gateway-amount">₱0.00</strong></div>
-                        </div>
-                        <section id="owner-merchant-payment" class="owner-merchant-payment" hidden aria-label="Owner merchant payment details">
-                            <h4 class="h6">Pay directly to this venue's merchant account</h4>
-                            <p id="owner-merchant-instructions" class="small text-body-secondary"></p>
-                            <button id="owner-merchant-qr-open" class="merchant-qr-open" type="button" aria-label="View merchant QR code in high definition" hidden>
-                                <img id="owner-merchant-qr" class="owner-merchant-qr" alt="Venue merchant QR code">
-                            </button>
-                            <button id="owner-merchant-qr-view" class="btn btn-sm btn-outline-primary mt-2" type="button" hidden>
-                                <svg class="merchant-qr-view-icon" aria-hidden="true" viewBox="0 0 16 16"><path d="M11.5 10.5 15 14l-1 1-3.5-3.5a5.5 5.5 0 1 1 1-1ZM6.5 11a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9Z"/></svg>
-                                Click to View HD QR
-                            </button>
-                            <p id="owner-merchant-no-qr" class="small text-body-secondary mb-0">No merchant QR image has been uploaded. Ask the venue for verified payment instructions.</p>
-                        </section>
-                        <p id="gateway-processing-status" class="small text-body-secondary" aria-live="polite">Continue to submit your reservation.</p>
-                        <div class="d-flex flex-column flex-sm-row gap-2">
-                            <button id="gateway-authorize" type="button" class="btn btn-primary flex-fill">Continue to Reservation Confirmation</button>
-                            <button id="gateway-back" type="button" class="btn btn-outline-secondary">Back</button>
-                        </div>
-                    </div>
-                </section>
-                <section id="booking-confirmed-state" class="booking-confirmed-state" hidden aria-live="polite">
-                    <div class="booking-confirmed-icon" aria-hidden="true">✓</div>
-                    <h3 class="h4 text-center">Reservation submitted</h3>
-                    <div id="booking-confirmed-summary" class="booking-summary mb-4 receipt-print-area"></div>
-                    <button id="print-booking-receipt" type="button" class="btn btn-outline-secondary w-100 mb-3">Print / Save Reservation Receipt</button>
-                    <div class="d-grid gap-2">
-                        <a class="btn btn-primary auth-submit" href="/my-bookings/">View My Bookings</a>
-                        <button id="book-more-slots" type="button" class="btn btn-outline-secondary booking-more-button">Book More Slots</button>
-                    </div>
-                </section>
-            </div>
-        </section>
-    </div>
-</div>
-
-<div id="merchant-qr-lightbox" class="modal fade merchant-qr-lightbox" tabindex="-1" aria-labelledby="merchant-qr-lightbox-title" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content merchant-qr-lightbox-panel">
-            <div class="modal-header border-0 pb-0">
-                <h2 id="merchant-qr-lightbox-title" class="modal-title h5">Merchant QR Code</h2>
-                <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close high-definition merchant QR"></button>
-            </div>
-            <div class="modal-body text-center">
-                <img id="merchant-qr-lightbox-image" class="merchant-qr-lightbox-image" alt="High-definition venue merchant QR code">
-                <p class="small text-body-secondary mt-3 mb-0">Scan with your GCash or Maya app.</p>
-            </div>
-        </div>
-    </div>
-</div>
-
 {{ facility_resources|json_script:"facility-resources-data" }}
 {{ sport_rates|json_script:"sport-rates-data" }}
+{{ payment_methods_data|json_script:"payment-methods-data" }}
+{% endblock %}
+
+{% block modals %}
+<div id="booking-modal" class="cg-modal-overlay" aria-hidden="true">
+    <section class="cg-modal-card cg-checkout-card" role="dialog" aria-modal="true" aria-labelledby="booking-modal-title">
+        <header class="cg-checkout-header">
+            <div><p class="cg-step-label">Review &amp; pay</p><h2 id="booking-modal-title">Book your court</h2><p>Reserve in a few simple steps. Your slot is held while we verify payment.</p></div>
+            <button type="button" class="btn-close" data-modal-close aria-label="Close"></button>
+        </header>
+        <div class="cg-progress"><span>1 Date &amp; court</span><span>2 Your details</span><span class="is-current">3 Review &amp; pay</span></div>
+        <form id="booking-confirm-form">
+            <div class="cg-checkout-body">
+                <p class="alert alert-warning">Slots are held only after your receipt is submitted. Availability or rates may change before submission.</p>
+                <div id="booking-result" aria-live="polite"></div>
+                <p class="small"><a href="{% url 'my_bookings' %}">Check My Bookings</a></p>
+                <section class="cg-checkout-section"><h3>Court &amp; Schedule</h3><div id="booking-summary"></div><div class="cg-checkout-totals"><span id="checkout-bookings"></span><span id="checkout-hours"></span><strong id="checkout-total"></strong></div></section>
+                <section class="cg-checkout-section">
+                    <h3>Player / Organizer Details</h3>
+                    <p id="checkout-customer-name" class="mb-1"></p>
+                    <p id="checkout-organizer-details" class="small text-body-secondary"></p>
+                    <div class="row g-3">
+                        <div class="col-sm-6"><label class="form-label" for="booker-email">Contact email</label><input id="booker-email" name="contact_email" type="email" class="form-control" value="{{ booker_email }}" autocomplete="email" required></div>
+                        <div class="col-sm-6"><label class="form-label" for="booker-phone">Mobile</label><input id="booker-phone" name="contact_phone" type="tel" class="form-control" value="{{ booker_phone }}" autocomplete="tel" required></div>
+                        <div class="col-sm-6"><label class="form-label" for="participant-count">Players per court</label><input id="participant-count" name="participant_count" type="number" class="form-control" min="1" step="1" value="1" required><div id="participant-capacity-help" class="form-text"></div></div>
+                        <div class="col-sm-6"><label class="form-label" for="participant-names">Player names (optional)</label><input id="participant-names" name="participant_names" class="form-control" maxlength="2000"></div>
+                    </div>
+                </section>
+                <section class="cg-checkout-section">
+                    <h3>Choose How You'll Pay</h3>
+                    <div class="cg-method-options">
+                        {% for method in payment_methods %}<label class="cg-method-option"><input type="radio" name="payment_method_used" value="{{ method.pk }}"><span><strong>{{ method.label }}</strong><small>{{ method.account_number }}</small></span></label>{% empty %}<p>No active payment methods are configured.</p>{% endfor %}
+                    </div>
+                    <div id="payment-details" class="cg-payment-details" hidden>
+                        <div><span>Amount due · Exact amount required</span><strong id="method-amount"></strong></div>
+                        <div><span>Method</span><strong id="method-label"></strong></div>
+                        <div><span>Account name</span><strong id="method-account-name"></strong></div>
+                        <div><span>Account number</span><strong id="method-account-number"></strong></div>
+                        <p id="method-instructions"></p>
+                        <a id="method-qr-link" target="_blank" rel="noopener" hidden><img id="method-qr" class="owner-merchant-qr" alt="Payment QR code"><span>View HD QR</span></a>
+                        <p class="small mb-0">Your booking references are issued after submission; use them when contacting the venue about your payment.</p>
+                    </div>
+                </section>
+                <section class="cg-checkout-section">
+                    <label class="cg-receipt-dropzone" for="payment-receipt"><strong>Choose your receipt — JPG, PNG, or PDF · max 5 MB</strong><span id="receipt-filename">No file selected</span><input id="payment-receipt" name="payment_receipt" type="file" accept=".jpg,.jpeg,.png,.pdf" required><img id="receipt-preview" alt="Receipt preview" hidden></label>
+                    <p id="receipt-error" class="text-danger small" aria-live="polite"></p>
+                    <label class="cg-policy-check"><input id="policy-accepted" type="checkbox" required> <span>I accept the booking policy and cancellation policy.</span></label>
+                    <p class="small text-body-secondary">Your slot is held while the venue verifies payment. Cancellations and any refunds are coordinated with the venue.</p>
+                </section>
+            </div>
+            <footer class="cg-checkout-footer"><div><strong id="footer-total">₱0.00</strong><small id="checkout-hint">Attach a receipt to continue</small></div><button id="confirm-booking" class="btn btn-primary" type="submit" disabled>Confirm &amp; pay →</button></footer>
+        </form>
+    </section>
+</div>
+<div id="booking-confirmation-modal" class="cg-modal-overlay" aria-hidden="true">
+    <section class="cg-modal-card cg-confirmation-card" role="dialog" aria-modal="true" aria-labelledby="confirmation-title">
+        <div class="d-flex justify-content-between gap-2"><h2 id="confirmation-title">Wait for confirmation</h2><button type="button" class="btn-close" data-modal-close aria-label="Close"></button></div>
+        <p>Payment receipt submitted! Your court slot(s) are now held while the venue owner verifies your payment.</p>
+        <div id="booking-confirmed-summary"></div>
+        <a href="{% url 'my_bookings' %}" class="btn btn-primary mt-3">View My Bookings</a>
+    </section>
+</div>
 {% endblock %}
 
 {% block scripts %}

@@ -16,6 +16,7 @@ from .models import (
     Facility,
     FacilityClosure,
     FacilityOperatingHours,
+    FacilityPaymentMethod,
     FacilitySport,
     ResourceSport,
     Sport,
@@ -63,30 +64,35 @@ class FacilityDetailPageTests(APITestCase):
         self.assertContains(response, 'id="availability-results"')
         self.assertContains(response, 'name="contact_email"')
         self.assertContains(response, 'name="contact_phone"')
-        self.assertContains(response, 'id="player-names-grid"')
+        self.assertContains(response, 'id="participant-names"')
         self.assertContains(response, 'id="facility-resources-data"')
-        self.assertContains(response, 'id="merchant-qr-lightbox"')
-        self.assertContains(response, 'Click to View HD QR')
-        self.assertEqual(response.context['available_payment_methods'], ['cash'])
-        self.assertContains(response, 'data-payment-methods="cash"')
+        self.assertContains(response, 'id="payment-receipt"')
+        self.assertContains(response, 'id="policy-accepted"')
+        self.assertContains(response, 'has not arranged a payment method yet')
         self.assertContains(response, 'Basketball')
         self.assertContains(response, 'name="csrfmiddlewaretoken"')
         self.assertContains(response, 'js/availability.js')
 
     def test_facility_detail_exposes_only_configured_payment_methods(self):
-        self.facility.gcash_number = '09171234567'
-        self.facility.accepts_card = True
-        self.facility.save(update_fields=('gcash_number', 'accepts_card'))
+        FacilityPaymentMethod.objects.create(
+            facility=self.facility, label='GCash',
+            account_name='Merchant', account_number='09171234567',
+        )
+        FacilityPaymentMethod.objects.create(
+            facility=self.facility, label='Inactive',
+            account_name='Merchant', account_number='11111', is_active=False,
+        )
 
         response = self.client.get(
             reverse('facility-detail-page', kwargs={'pk': self.facility.pk}),
         )
 
         self.assertEqual(
-            response.context['available_payment_methods'],
-            ['gcash', 'card', 'cash'],
+            [method.label for method in response.context['payment_methods']],
+            ['GCash'],
         )
-        self.assertContains(response, 'data-payment-methods="gcash,card,cash"')
+        self.assertContains(response, 'GCash')
+        self.assertNotContains(response, 'Inactive')
 
     def test_inactive_facility_detail_page_returns_not_found(self):
         self.facility.is_active = False
@@ -175,6 +181,20 @@ class FacilityDiscoveryAPITests(APITestCase):
             [sport['slug'] for sport in response.data['results']],
             ['basketball', 'pickleball'],
         )
+
+    def test_discovery_indicates_whether_payment_has_been_arranged(self):
+        FacilityPaymentMethod.objects.create(
+            facility=self.basketball_facility,
+            label='GCash',
+            account_name='Merchant',
+            account_number='09171234567',
+        )
+
+        response = self.client.get('/api/facilities/')
+
+        facilities = {item['id']: item for item in response.data['results']}
+        self.assertFalse(facilities[self.shared_facility.pk]['has_arranged_payment_method'])
+        self.assertTrue(facilities[self.basketball_facility.pk]['has_arranged_payment_method'])
 
     def test_facilities_default_to_or_matching_and_include_nested_data(self):
         response = self.client.get(

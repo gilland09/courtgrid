@@ -9,6 +9,8 @@ from django.utils import timezone
 
 from facilities.models import BookableResource, Sport
 
+from .storage import PrivateReceiptStorage
+
 
 class UserProfile(models.Model):
     class Role(models.TextChoices):
@@ -53,6 +55,11 @@ class Booking(models.Model):
     class Status(models.TextChoices):
         CONFIRMED = 'CONFIRMED', 'Confirmed'
         CANCELLED = 'CANCELLED', 'Cancelled'
+        PENDING_VERIFICATION = 'PENDING_VERIFICATION', 'Awaiting Owner Verification'
+
+    class BookingType(models.TextChoices):
+        PLAYER = 'player', 'Player Only'
+        ORGANIZER = 'organizer', 'Club / Organizer'
 
     class PaymentMethod(models.TextChoices):
         GCASH = 'gcash', 'GCash'
@@ -87,10 +94,28 @@ class Booking(models.Model):
     contact_email = models.EmailField(blank=True)
     contact_phone = models.CharField(max_length=32, blank=True)
     status = models.CharField(
-        max_length=10,
+        max_length=20,
         choices=Status.choices,
         default=Status.CONFIRMED,
     )
+    booking_type = models.CharField(
+        max_length=20, choices=BookingType.choices, default=BookingType.PLAYER,
+    )
+    organization_name = models.CharField(max_length=150, blank=True)
+    event_name = models.CharField(max_length=150, blank=True)
+    expected_participants = models.PositiveIntegerField(null=True, blank=True)
+    payment_method_used = models.ForeignKey(
+        'facilities.FacilityPaymentMethod',
+        null=True, blank=True, on_delete=models.SET_NULL,
+    )
+    payment_method_label = models.CharField(max_length=60, blank=True)
+    payment_account_number = models.CharField(max_length=80, blank=True)
+    payment_receipt = models.FileField(
+        upload_to='payment_receipts/', storage=PrivateReceiptStorage(),
+        blank=True, null=True,
+    )
+    payment_receipt_uploaded_at = models.DateTimeField(null=True, blank=True)
+    policy_accepted = models.BooleanField(default=False)
     rate_snapshot = models.DecimalField(max_digits=10, decimal_places=2)
     total_price = models.DecimalField(
         max_digits=10,

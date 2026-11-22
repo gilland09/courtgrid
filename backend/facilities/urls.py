@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     AvailabilitySearchView,
+    AvailabilityRangeView,
     FacilityDetailView,
     FacilityListView,
     SportListView,
@@ -10,6 +11,7 @@ from .views import (
 urlpatterns = [
     path('sports/', SportListView.as_view(), name='sport-list'),
     path('availability/search', AvailabilitySearchView.as_view(), name='availability-search'),
+    path('availability/range', AvailabilityRangeView.as_view(), name='availability-range'),
     path('facilities/', FacilityListView.as_view(), name='facility-list'),
     path('facilities/<int:pk>/', FacilityDetailView.as_view(), name='facility-detail'),
     path('courts/', FacilityListView.as_view(), name='court-list'),

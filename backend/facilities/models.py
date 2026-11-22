@@ -142,6 +142,32 @@ class Facility(models.Model):
         methods.append('cash')
         return methods
 
+    @property
+    def has_arranged_payment_method(self):
+        if hasattr(self, 'active_payment_methods'):
+            return bool(self.active_payment_methods)
+        return self.payment_methods.filter(is_active=True).exists()
+
+
+class FacilityPaymentMethod(models.Model):
+    facility = models.ForeignKey(
+        Facility, on_delete=models.CASCADE, related_name='payment_methods',
+    )
+    label = models.CharField(max_length=60)
+    account_name = models.CharField(max_length=120)
+    account_number = models.CharField(max_length=80)
+    qr_image = models.FileField(upload_to='payment_qrs/', blank=True, null=True)
+    instructions = models.CharField(max_length=255, blank=True)
+    is_active = models.BooleanField(default=True)
+    display_order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('display_order', 'pk')
+
+    def __str__(self):
+        return f'{self.facility}: {self.label}'
+
 
 class FacilitySport(models.Model):
     facility = models.ForeignKey(

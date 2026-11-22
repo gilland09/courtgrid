@@ -1,6 +1,20 @@
 from rest_framework import serializers
 
-from .models import BookableResource, Facility, FacilitySport, Sport
+from .models import BookableResource, Facility, FacilityPaymentMethod, FacilitySport, Sport
+
+
+class FacilityPaymentMethodSerializer(serializers.ModelSerializer):
+    qr_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = FacilityPaymentMethod
+        fields = (
+            'id', 'label', 'account_name', 'account_number', 'qr_url',
+            'instructions', 'display_order',
+        )
+
+    def get_qr_url(self, obj):
+        return obj.qr_image.url if obj.qr_image else None
 
 
 class SportSerializer(serializers.ModelSerializer):
@@ -33,6 +47,30 @@ class AvailabilitySearchSerializer(serializers.Serializer):
     )
 
 
+class AvailabilityRangeSerializer(serializers.Serializer):
+    start_date = serializers.DateField()
+    end_date = serializers.DateField()
+    court_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1), allow_empty=False, max_length=50,
+    )
+    booking_type = serializers.ChoiceField(choices=('player', 'organizer'))
+    sport = serializers.CharField(required=False, allow_blank=False)
+    start_time = serializers.TimeField(required=False)
+    end_time = serializers.TimeField(required=False)
+
+    def validate(self, attrs):
+        days = (attrs['end_date'] - attrs['start_date']).days
+        if days < 0 or days >= 14:
+            raise serializers.ValidationError({'end_date': 'Choose a range of at most 14 days.'})
+        if attrs['booking_type'] == 'player' and len(set(attrs['court_ids'])) != 1:
+            raise serializers.ValidationError({'court_ids': 'Players can select only one court.'})
+        if ('start_time' in attrs) != ('end_time' in attrs):
+            raise serializers.ValidationError('Supply both start_time and end_time.')
+        if 'start_time' in attrs and attrs['start_time'] >= attrs['end_time']:
+            raise serializers.ValidationError('The end time must be after the start time.')
+        return attrs
+
+
 class FacilitySerializer(serializers.ModelSerializer):
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
@@ -40,6 +78,7 @@ class FacilitySerializer(serializers.ModelSerializer):
     matching_sports = serializers.SerializerMethodField()
     court_count = serializers.SerializerMethodField()
     cover_photo_url = serializers.SerializerMethodField()
+    payment_methods = serializers.SerializerMethodField()
     resources = BookableResourceSerializer(many=True, read_only=True, source='active_resources')
 
     class Meta:
@@ -61,6 +100,8 @@ class FacilitySerializer(serializers.ModelSerializer):
             'amenities',
             'court_count',
             'cover_photo_url',
+            'has_arranged_payment_method',
+            'payment_methods',
             'resources',
         )
 
@@ -133,3 +174,9 @@ class FacilitySerializer(serializers.ModelSerializer):
         cover = next((photo for photo in photos if photo.is_cover), None)
         photo = cover or (photos[0] if photos else None)
         return photo.image.url if photo else None
+
+    def get_payment_methods(self, obj):
+        methods = getattr(obj, 'active_payment_methods', None)
+        if methods is None:
+            methods = obj.payment_methods.filter(is_active=True)
+        return FacilityPaymentMethodSerializer(methods, many=True).data

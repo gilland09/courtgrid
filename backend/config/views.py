@@ -1,5 +1,7 @@
 from decimal import Decimal
+from pathlib import Path
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.admin.models import LogEntry
 from django.contrib.auth.decorators import user_passes_test
@@ -10,9 +12,12 @@ from django.contrib.auth.forms import AuthenticationForm
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Q, Sum
+from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils._os import safe_join
 from django.utils import timezone
 from django.views.decorators.http import require_POST
+from django.views.static import serve
 
 from bookings.models import Booking, UserProfile, get_user_role
 from facilities.models import BookableResource, Facility, FacilityClosure, Sport
@@ -21,6 +26,14 @@ from facilities.management_views import (
     set_facility_verification,
 )
 from .forms import RegistrationForm
+
+
+def guarded_media_view(request, path):
+    target = Path(safe_join(settings.MEDIA_ROOT, path)).resolve()
+    private_root = Path(settings.PRIVATE_RECEIPT_ROOT).resolve()
+    if target == private_root or private_root in target.parents:
+        raise Http404
+    return serve(request, path, document_root=settings.MEDIA_ROOT)
 
 
 def _dashboard_url(user):
@@ -116,10 +129,13 @@ def admin_dashboard_view(request):
             return redirect('admin_dashboard')
         with transaction.atomic():
             bookings = Booking.objects.select_for_update().filter(
-                status=Booking.Status.CONFIRMED,
+                status__in=(Booking.Status.CONFIRMED, Booking.Status.PENDING_VERIFICATION),
             )
             if action == 'collect_commission':
-                bookings = bookings.filter(payment_status=Booking.PaymentStatus.PAID)
+                bookings = bookings.filter(
+                    status=Booking.Status.CONFIRMED,
+                    payment_status=Booking.PaymentStatus.PAID,
+                )
             booking = get_object_or_404(bookings, pk=request.POST.get('booking_id'))
             if action == 'collect_commission':
                 if booking.platform_fee_collected:
@@ -142,10 +158,12 @@ def admin_dashboard_view(request):
                 if booking.payment_status != Booking.PaymentStatus.PENDING:
                     messages.info(request, 'This reservation is not awaiting payment verification.')
                 else:
+                    booking.status = Booking.Status.CONFIRMED
                     booking.payment_status = Booking.PaymentStatus.PAID
                     booking.payment_verified_at = timezone.now()
                     booking.payment_verified_by = request.user
                     booking.save(update_fields=(
+                        'status',
                         'payment_status',
                         'payment_verified_at',
                         'payment_verified_by',

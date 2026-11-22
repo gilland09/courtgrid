@@ -79,6 +79,13 @@ function renderFacilitiesList(facilities) {
             : 'Pending platform verification';
         cardBody.append(verification);
 
+        if (!facility.has_arranged_payment_method) {
+            const paymentNotice = document.createElement('p');
+            paymentNotice.className = 'alert alert-warning small';
+            paymentNotice.textContent = 'This venue has not arranged a payment method yet. Contact the venue for payment details.';
+            cardBody.append(paymentNotice);
+        }
+
         const venueDetails = document.createElement('div');
         venueDetails.className = 'd-flex flex-wrap gap-2 mb-3';
         const courtCount = Number(facility.court_count) || 0;
@@ -114,6 +121,8 @@ function renderFacilitiesList(facilities) {
         availabilityLink.className = 'btn btn-primary w-100';
         availabilityLink.href = `/facilities/${facility.id}/`;
         availabilityLink.textContent = 'Check Playable Slots';
+        availabilityLink.dataset.roleVenueId = facility.id;
+        availabilityLink.dataset.roleVenueName = facility.name;
         cardBody.append(availabilityLink);
 
         card.append(cardBody);
@@ -164,6 +173,8 @@ function renderMapPins(facilities) {
         availabilityLink.className = 'btn btn-sm btn-primary';
         availabilityLink.href = `/facilities/${facility.id}/`;
         availabilityLink.textContent = 'View & Book Slots';
+        availabilityLink.dataset.roleVenueId = facility.id;
+        availabilityLink.dataset.roleVenueName = facility.name;
         popup.append(availabilityLink);
 
         const marker = L.marker([latitude, longitude])
@@ -227,6 +238,21 @@ function getSelectedSports() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    const roleModal = document.getElementById('booking-role-modal');
+    document.addEventListener('click', (event) => {
+        const trigger = event.target.closest('[data-role-venue-id]');
+        if (!trigger) return;
+        event.preventDefault();
+        const venueId = Number(trigger.dataset.roleVenueId);
+        if (!Number.isInteger(venueId) || venueId < 1) return;
+        document.getElementById('booking-role-venue').textContent = trigger.dataset.roleVenueName;
+        document.getElementById('role-player-link').href = `/facilities/${venueId}/?mode=player`;
+        document.getElementById('role-organizer-link').href = `/facilities/${venueId}/?mode=organizer`;
+        roleModal.classList.add('is-open');
+        roleModal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('cg-modal-open');
+        document.getElementById('role-player-link').focus();
+    });
     const initialSports = new URLSearchParams(window.location.search).get('sports');
     if (initialSports) {
         const selectedSlugs = new Set(initialSports.split(',').map((slug) => slug.trim()).filter(Boolean));

@@ -78,7 +78,7 @@ def has_confirmed_booking(resource, start_datetime, end_datetime):
 
     return Booking.objects.filter(
         resource=resource,
-        status=Booking.Status.CONFIRMED,
+        status__in=(Booking.Status.CONFIRMED, Booking.Status.PENDING_VERIFICATION),
         start_datetime__lt=end_datetime,
         end_datetime__gt=start_datetime,
     ).exists()

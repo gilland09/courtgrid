@@ -22,19 +22,21 @@
 <div id="bookings-container" aria-live="polite">
     <p class="text-body-secondary">Loading your bookings...</p>
 </div>
+{% endblock %}
 
-<div class="modal fade" id="cancel-booking-modal" tabindex="-1" aria-labelledby="cancel-booking-title" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-sm">
-        <section class="modal-content booking-modal-content">
+{% block modals %}
+<div class="cg-modal-overlay" id="cancel-booking-modal" aria-hidden="true">
+    <div class="cg-modal-card" role="dialog" aria-modal="true" aria-labelledby="cancel-booking-title">
+        <section class="booking-modal-content">
             <div class="modal-header border-0 pb-0">
                 <h2 class="modal-title h5" id="cancel-booking-title">Cancel this booking?</h2>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <button type="button" class="btn-close" data-modal-close aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <p id="cancel-booking-summary" class="text-body-secondary"></p>
                 <div id="cancel-booking-result" aria-live="polite"></div>
                 <div class="d-flex gap-2 mt-3">
-                    <button type="button" class="btn btn-outline-secondary flex-fill" data-bs-dismiss="modal">Keep Booking</button>
+                    <button type="button" class="btn btn-outline-secondary flex-fill" data-modal-close>Keep Booking</button>
                     <button id="confirm-cancel-booking" type="button" class="btn btn-danger flex-fill">Cancel Booking</button>
                 </div>
             </div>
@@ -42,12 +44,12 @@
     </div>
 </div>
 
-<div class="modal fade" id="booking-receipt-modal" tabindex="-1" aria-labelledby="booking-receipt-title" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-        <section class="modal-content booking-modal-content">
+<div class="cg-modal-overlay" id="booking-receipt-modal" aria-hidden="true">
+    <div class="cg-modal-card" role="dialog" aria-modal="true" aria-labelledby="booking-receipt-title">
+        <section class="booking-modal-content">
             <div class="modal-header border-0 pb-0">
                 <h2 class="modal-title h4" id="booking-receipt-title">CourtGrid Digital Receipt</h2>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <button type="button" class="btn-close" data-modal-close aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <div id="booking-receipt-content" class="booking-summary receipt-print-area"></div>

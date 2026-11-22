@@ -225,6 +225,19 @@ STORAGES = {
 }
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+PRIVATE_RECEIPT_ROOT = Path(os.environ.get(
+    'PRIVATE_RECEIPT_ROOT', str(MEDIA_ROOT / 'private_receipts'),
+)).resolve()
+if PRIVATE_RECEIPT_ROOT == MEDIA_ROOT.resolve() or PRIVATE_RECEIPT_ROOT in MEDIA_ROOT.resolve().parents:
+    raise ImproperlyConfigured('PRIVATE_RECEIPT_ROOT must not contain MEDIA_ROOT.')
+for public_root in (STATIC_ROOT, *(Path(path) for path in STATICFILES_DIRS)):
+    public_root = public_root.resolve()
+    if (
+        PRIVATE_RECEIPT_ROOT == public_root
+        or public_root in PRIVATE_RECEIPT_ROOT.parents
+        or PRIVATE_RECEIPT_ROOT in public_root.parents
+    ):
+        raise ImproperlyConfigured('PRIVATE_RECEIPT_ROOT must not overlap static directories.')
 LOGIN_URL = 'login'
 
 # Default primary key field type

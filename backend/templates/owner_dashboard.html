@@ -96,7 +96,7 @@
                     </div>
                     <span class="payment-receipt-badge">Manual merchant setup</span>
                 </div>
-                <p class="small text-body-secondary">Upload the official QR image issued by your wallet provider. Customer transfers are external and must be verified by the venue; CourtGrid does not process or automatically route funds.</p>
+                <p class="small text-body-secondary">Legacy merchant settings are retained for existing bookings. Configure current checkout options under Payment Methods below. Customer transfers are external and must be verified by the venue; CourtGrid does not process or automatically route funds.</p>
                 <p class="small fw-semibold mb-3">{{ panel.facility.payout_qr_label|default:"No QR configured" }} · {{ panel.facility.wallet_account_name|default:"No account name configured" }}</p>
                 {% if panel.facility.payment_qr_image %}
                     <img src="{{ panel.facility.payment_qr_image.url }}" class="owner-portal-qr mb-3" alt="Merchant QR for {{ panel.facility.name }}">
@@ -114,6 +114,50 @@
                     {% endfor %}
                     <div class="col-12"><button class="btn btn-outline-primary" type="submit">Save Merchant Details</button></div>
                 </form>
+            </section>
+
+            <section class="border rounded-3 p-3 mb-4" aria-labelledby="payment-methods-{{ panel.facility.pk }}">
+                <h3 id="payment-methods-{{ panel.facility.pk }}" class="h5">Payment Methods</h3>
+                <p class="small text-body-secondary">Customers pay your venue directly. Configure the methods they can use.</p>
+                {% for item in panel.payment_method_panels %}
+                    <article class="border rounded-3 p-3 mb-3">
+                        <div class="d-flex justify-content-between gap-2">
+                            <strong>{{ item.method.label }} · {{ item.method.account_name }} · {{ item.method.account_number }}</strong>
+                            <span class="badge {% if item.method.is_active %}text-bg-success{% else %}text-bg-secondary{% endif %}">{% if item.method.is_active %}Active{% else %}Inactive{% endif %}</span>
+                        </div>
+                        {% if item.method.qr_image %}<img src="{{ item.method.qr_image.url }}" class="owner-portal-qr my-2" alt="QR code for {{ item.method.label }}">{% endif %}
+                        <details class="mt-2">
+                            <summary>Edit payment method</summary>
+                            <form method="post" enctype="multipart/form-data" action="{% url 'owner-manage-payment-methods' panel.facility.pk %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="save">
+                                <input type="hidden" name="method_id" value="{{ item.method.pk }}">
+                                {{ item.form.as_p }}
+                                <button class="btn btn-outline-primary btn-sm" type="submit">Save</button>
+                            </form>
+                        </details>
+                        <div class="d-flex gap-2 mt-2">
+                            <form method="post" action="{% url 'owner-manage-payment-methods' panel.facility.pk %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="toggle">
+                                <input type="hidden" name="method_id" value="{{ item.method.pk }}">
+                                <button class="btn btn-outline-secondary btn-sm" type="submit">{% if item.method.is_active %}Deactivate{% else %}Activate{% endif %}</button>
+                            </form>
+                            <button type="button" class="btn btn-outline-danger btn-sm" data-payment-delete-trigger data-payment-delete-url="{% url 'owner-manage-payment-methods' panel.facility.pk %}" data-payment-id="{{ item.method.pk }}" data-payment-label="{{ item.method.label }}">Delete</button>
+                        </div>
+                    </article>
+                {% empty %}
+                    <p class="text-body-secondary">No payment methods configured.</p>
+                {% endfor %}
+                <details>
+                    <summary class="fw-semibold">Add payment method</summary>
+                    <form method="post" enctype="multipart/form-data" action="{% url 'owner-manage-payment-methods' panel.facility.pk %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="add">
+                        {{ panel.payment_method_add_form.as_p }}
+                        <button class="btn btn-primary btn-sm" type="submit">Add Payment Method</button>
+                    </form>
+                </details>
             </section>
 
             <div class="row g-4">
@@ -421,10 +465,11 @@
                             </td>
                             <td>₱{{ booking.owner_payout_amount }}</td>
                             <td>
-                                <span class="payment-receipt-badge {% if booking.payment_status == 'pending' %}payment-pending-badge{% endif %}">{{ booking.get_payment_method_display }} · {{ booking.get_payment_status_display }}</span>
+                                <span class="payment-receipt-badge {% if booking.payment_status == 'pending' %}payment-pending-badge{% endif %}">{{ booking.payment_method_label|default:booking.get_payment_method_display }} · {{ booking.get_status_display }} · {{ booking.get_payment_status_display }}</span>
                                 <br><small>Reservation ref: {{ booking.payment_reference }}</small>
+                                {% if booking.payment_receipt %}<br><a href="{% url 'booking-receipt' booking.pk %}">View receipt</a>{% endif %}
                                 <div class="d-flex flex-wrap gap-1 mt-1">
-                                    {% if booking.status == 'CONFIRMED' and booking.payment_status == 'pending' %}
+                                    {% if booking.status != 'CANCELLED' and booking.payment_status == 'pending' %}
                                         <form method="post">
                                             {% csrf_token %}
                                             <input type="hidden" name="action" value="verify_payment">
@@ -434,7 +479,7 @@
                                     {% elif booking.payment_verified_at %}
                                         <small class="align-self-center">Verified {{ booking.payment_verified_at|date:"M j, Y g:i A" }}</small>
                                     {% endif %}
-                                    {% if booking.status == 'CONFIRMED' %}
+                                    {% if booking.status != 'CANCELLED' %}
                                         <button
                                             class="btn btn-sm btn-outline-danger owner-booking-cancel-trigger"
                                             type="button"
@@ -468,6 +513,18 @@
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+    const paymentOverlay = document.querySelector('[data-payment-delete-modal]');
+    document.addEventListener('click', (event) => {
+        const trigger = event.target.closest('[data-payment-delete-trigger]');
+        if (!trigger || !paymentOverlay) return;
+        const form = paymentOverlay.querySelector('form');
+        form.action = trigger.dataset.paymentDeleteUrl;
+        form.querySelector('[name="method_id"]').value = trigger.dataset.paymentId;
+        paymentOverlay.querySelector('[data-payment-label]').textContent = trigger.dataset.paymentLabel;
+        paymentOverlay.classList.add('is-open');
+        paymentOverlay.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('cg-modal-open');
+    });
     const overlay = document.querySelector('[data-photo-delete-modal]');
     if (!overlay) return;
     const form = overlay.querySelector('[data-photo-delete-form]');
@@ -489,6 +546,21 @@ document.addEventListener('DOMContentLoaded', () => {
 {% endblock %}
 
 {% block modals %}
+<div class="cg-modal-overlay" data-payment-delete-modal aria-hidden="true">
+    <div class="cg-modal-card" role="dialog" aria-modal="true" aria-labelledby="payment-delete-title">
+        <div class="p-3">
+            <h2 id="payment-delete-title" class="h5">Delete payment method?</h2>
+            <p>Delete <strong data-payment-label></strong>? Existing booking snapshots will be retained.</p>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="method_id">
+                <button type="button" class="btn btn-outline-secondary" data-modal-close>Keep</button>
+                <button type="submit" class="btn btn-danger">Delete</button>
+            </form>
+        </div>
+    </div>
+</div>
 <div
     class="cg-modal-overlay"
     data-cancel-modal
