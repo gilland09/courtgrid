@@ -57,11 +57,14 @@ function showReceipt(booking) {
     receiptContent.replaceChildren();
     const heading = document.createElement('h3');
     heading.className = 'h5 mb-3';
-    heading.textContent = booking.payment_status === 'paid'
+    heading.textContent = booking.payment_status === 'mixed'
+        ? 'CourtGrid Reservation Receipt · Mixed Payment Statuses'
+        : booking.payment_status === 'paid'
         ? 'CourtGrid Verified Payment Receipt'
         : 'CourtGrid Reservation Receipt · Payment Pending';
     receiptContent.append(heading);
-    addReceiptRow('Reference number', booking.payment_reference);
+    addReceiptRow('Batch reference', booking.checkout_batch_id || booking.payment_reference);
+    addReceiptRow('Reservation references', booking.items.map((item) => item.payment_reference).join(', '));
     addReceiptRow('Venue', booking.facility_name);
     addReceiptRow('Merchant account', booking.merchant_account_name || booking.facility_name);
     const merchantNumber = booking.payment_method === 'gcash'
@@ -72,12 +75,8 @@ function showReceipt(booking) {
     if (merchantNumber) {
         addReceiptRow('Merchant number', merchantNumber);
     }
-    addReceiptRow('Court', booking.resource_name);
+    booking.schedules.forEach((schedule) => addReceiptRow('Schedule', schedule));
     addReceiptRow('Sport', booking.sport_name);
-    addReceiptRow(
-        'Date and time',
-        `${formatBookingDateTime(booking.start_datetime)} – ${formatBookingDateTime(booking.end_datetime)}`,
-    );
     addReceiptRow('Participant count', String(booking.participant_count));
     addReceiptRow('Player roster', booking.participant_names || 'Names not provided');
     addReceiptRow(
@@ -91,7 +90,9 @@ function showReceipt(booking) {
     );
     addReceiptRow(
         'Payment status',
-        booking.payment_status === 'paid'
+        booking.payment_status === 'mixed'
+            ? 'MIXED · see individual reservations'
+            : booking.payment_status === 'paid'
             ? 'PAID · merchant verified'
             : booking.payment_status === 'refunded'
                 ? 'REFUNDED'
@@ -100,7 +101,9 @@ function showReceipt(booking) {
     addReceiptRow('Total amount', `${booking.currency || 'PHP'} ${booking.total_price}`);
     const notice = document.createElement('p');
     notice.className = 'payment-processing-notice mb-0 mt-3';
-    notice.textContent = booking.payment_status === 'paid'
+    notice.textContent = booking.payment_status === 'mixed'
+        ? 'Payment statuses differ across this checkout. Contact the venue for details.'
+        : booking.payment_status === 'paid'
         ? `Payment verification recorded${booking.payment_verified_at ? ` on ${formatBookingDateTime(booking.payment_verified_at)}` : ''}.`
         : 'This is a reservation record, not proof of payment. The venue must verify any external wallet transfer.';
     receiptContent.append(notice);
@@ -120,15 +123,48 @@ function addBookingDetail(container, label, value) {
 
 function partitionBookings() {
     const now = Date.now();
+    const groups = new Map();
+    allBookings.forEach((booking) => {
+        const key = booking.checkout_batch_id
+            ? `${booking.facility_id}:${booking.checkout_batch_id}`
+            : `legacy:${booking.id}`;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(booking);
+    });
+    const batches = Array.from(groups.values(), (items) => {
+        items.sort((a, b) => a.resource_id - b.resource_id || Date.parse(a.start_datetime) - Date.parse(b.start_datetime));
+        const ranges = [];
+        items.forEach((item) => {
+            const previous = ranges[ranges.length - 1];
+            const date = formatBookingDateTime(item.start_datetime).split(',')[0];
+            if (previous && previous.resource_id === item.resource_id
+                && Date.parse(previous.end) === Date.parse(item.start_datetime)
+                && previous.date === date) {
+                previous.end = item.end_datetime;
+                previous.slots += 1;
+                previous.hours += (Date.parse(item.end_datetime) - Date.parse(item.start_datetime)) / 3600000;
+            } else {
+                ranges.push({ resource_id: item.resource_id, name: item.resource_name,
+                    start: item.start_datetime, end: item.end_datetime, date, slots: 1,
+                    hours: (Date.parse(item.end_datetime) - Date.parse(item.start_datetime)) / 3600000 });
+            }
+        });
+        const statuses = new Set(items.map((item) => item.status));
+        const payments = new Set(items.map((item) => item.payment_status));
+        const active = items.filter((item) => item.status === 'CONFIRMED' || item.status === 'PENDING_VERIFICATION');
+        const cents = items.reduce((sum, item) => sum + Math.round(Number(item.total_price) * 100), 0);
+        const hours = items.reduce((sum, item) => sum + (Date.parse(item.end_datetime) - Date.parse(item.start_datetime)) / 3600000, 0);
+        return {
+            ...items[0], items, active,
+            status: statuses.size === 1 ? items[0].status : 'MIXED',
+            payment_status: payments.size === 1 ? items[0].payment_status : 'mixed',
+            total_price: (cents / 100).toFixed(2), hours,
+            schedules: ranges.map((range) => `${range.name} · ${formatBookingDateTime(range.start)} – ${formatBookingDateTime(range.end)} (${range.hours} hrs)`),
+        };
+    });
     return {
-        upcoming: allBookings.filter((booking) => (
-            (booking.status === 'CONFIRMED' || booking.status === 'PENDING_VERIFICATION')
-            && new Date(booking.start_datetime).getTime() > now
-        )),
-        past: allBookings.filter((booking) => (
-            (booking.status !== 'CONFIRMED' && booking.status !== 'PENDING_VERIFICATION')
-            || new Date(booking.start_datetime).getTime() <= now
-        )),
+        upcoming: batches.filter((batch) => batch.active.some((item) => Date.parse(item.start_datetime) > now)),
+        past: batches.filter((batch) => !batch.active.some((item) => Date.parse(item.start_datetime) > now)),
     };
 }
 
@@ -211,21 +247,17 @@ function renderBookings() {
         title.textContent = booking.facility_name;
         const court = document.createElement('p');
         court.className = 'small text-body-secondary mb-0';
-        court.textContent = booking.resource_name;
+        court.textContent = `${booking.items.length} slots · ${booking.hours} hrs`;
         titleGroup.append(title, court);
         const status = document.createElement('span');
-        status.className = `reservation-status ${booking.status === 'CONFIRMED' ? 'is-confirmed' : booking.status === 'PENDING_VERIFICATION' ? 'is-pending' : 'is-cancelled'}`;
-        status.textContent = booking.status === 'CONFIRMED' ? 'Confirmed'
+        status.className = `reservation-status ${booking.status === 'CONFIRMED' ? 'is-confirmed' : booking.status === 'PENDING_VERIFICATION' || booking.status === 'MIXED' ? 'is-pending' : 'is-cancelled'}`;
+        status.textContent = booking.status === 'MIXED' ? 'Mixed statuses' : booking.status === 'CONFIRMED' ? 'Confirmed'
             : booking.status === 'PENDING_VERIFICATION' ? 'Awaiting Owner Verification' : 'Cancelled';
         top.append(titleGroup, status);
         body.append(top);
 
         addBookingDetail(body, 'Sport', booking.sport_name);
-        addBookingDetail(
-            body,
-            'Date & time',
-            `${formatBookingDateTime(booking.start_datetime)} – ${formatBookingDateTime(booking.end_datetime)}`,
-        );
+        booking.schedules.forEach((schedule) => addBookingDetail(body, 'Schedule', schedule));
         addBookingDetail(body, 'Participants', String(booking.participant_count));
         if (booking.booking_type === 'organizer') {
             addBookingDetail(body, 'Organization', booking.organization_name);
@@ -249,16 +281,20 @@ function renderBookings() {
         if (booking.payment_status === 'pending') {
             paymentBadge.classList.add('payment-pending-badge');
         }
-        paymentBadge.textContent = booking.payment_status === 'pending'
+        paymentBadge.textContent = booking.payment_status === 'mixed' ? 'Mixed payment statuses' : booking.payment_status === 'pending'
             ? 'Payment pending · venue verification'
             : booking.payment_status === 'refunded'
                 ? 'Refunded'
                 : 'Paid';
         body.append(paymentBadge);
-        addBookingDetail(body, 'Reservation reference', booking.payment_reference || 'Pending');
-        if (booking.cancellation_reason) {
-            addBookingDetail(body, 'Cancellation reason', booking.cancellation_reason);
+        addBookingDetail(body, 'Batch reference', booking.checkout_batch_id || booking.payment_reference);
+        addBookingDetail(body, 'Reservation references', booking.items.map((item) => item.payment_reference).join(', '));
+        if (booking.status === 'MIXED' || booking.payment_status === 'mixed') {
+            booking.items.forEach((item) => addBookingDetail(body, item.payment_reference, `${item.status} · ${item.payment_status}`));
         }
+        booking.items.filter((item) => item.cancellation_reason).forEach((item) => {
+            addBookingDetail(body, `Cancellation reason (${item.payment_reference})`, item.cancellation_reason);
+        });
 
         const receiptButton = document.createElement('button');
         receiptButton.type = 'button';
@@ -275,8 +311,8 @@ function renderBookings() {
         }
 
         if (
-            (booking.status === 'CONFIRMED' || booking.status === 'PENDING_VERIFICATION')
-            && new Date(booking.start_datetime).getTime() > Date.now()
+            booking.active.length > 0
+            && booking.active.every((item) => Date.parse(item.start_datetime) > Date.now())
         ) {
             const cancelButton = document.createElement('button');
             cancelButton.type = 'button';
@@ -341,7 +377,7 @@ function showCancelMessage(message, type = 'danger') {
 
 function openCancelModal(booking) {
     bookingToCancel = booking;
-    cancelSummary.textContent = `${booking.resource_name} · ${formatBookingDateTime(booking.start_datetime)}.`;
+    cancelSummary.textContent = `Cancel all active slots in ${booking.checkout_batch_id || booking.payment_reference}: ${booking.schedules.join('; ')}.`;
     cancelResult.replaceChildren();
     openModal(cancelModalElement);
 }
@@ -378,7 +414,7 @@ async function cancelBooking() {
         }
         showCancelMessage('Your booking has been cancelled.', 'success');
         allBookings = allBookings.map((booking) => (
-            booking.id === bookingToCancel.id
+            bookingToCancel.active.some((item) => item.id === booking.id)
                 ? {
                     ...booking,
                     status: 'CANCELLED',
@@ -408,7 +444,7 @@ bookingTabs.addEventListener('click', (event) => {
 bookingsContainer.addEventListener('click', (event) => {
     const receiptButton = event.target.closest('.booking-receipt-button');
     if (receiptButton) {
-        const booking = allBookings.find(
+        const booking = Object.values(partitionBookings()).flat().find(
             (item) => String(item.id) === receiptButton.dataset.bookingId,
         );
         if (booking) {
@@ -417,7 +453,7 @@ bookingsContainer.addEventListener('click', (event) => {
         return;
     }
     const button = event.target.closest('[data-booking-id]');
-    const booking = allBookings.find((item) => item.id === Number(button?.dataset.bookingId));
+    const booking = Object.values(partitionBookings()).flat().find((item) => item.id === Number(button?.dataset.bookingId));
     if (button && booking) {
         openCancelModal(booking);
     }

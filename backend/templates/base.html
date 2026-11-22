@@ -88,16 +88,13 @@
 <body>
     {% include 'navbar.html' %}
 
-    {% if messages %}
-        <div class="container mt-3" aria-live="polite">
-            {% for message in messages %}
-                <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-            {% endfor %}
-        </div>
-    {% endif %}
+    <div id="cg-toast-stack" aria-live="polite" aria-relevant="additions">
+        {% for message in messages %}
+            <div class="cg-toast cg-toast-{{ message.tags|default:'info' }}" role="status">
+                <span>{{ message }}</span><button type="button" aria-label="Dismiss notification">×</button>
+            </div>
+        {% endfor %}
+    </div>
 
     <main class="container mt-4">
         {% block content %}{% endblock %}
@@ -107,6 +104,8 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script src="{% static 'js/toasts.js' %}"></script>
+    <script src="{% static 'js/booking_actions.js' %}" defer></script>
     {% block scripts %}{% endblock %}
     {% block extra_js %}{% endblock %}
     <script>
@@ -220,12 +219,12 @@
             });
 
             document.querySelectorAll('[data-booking-panel]').forEach((panel) => {
-            const rows = Array.from(panel.querySelectorAll('[data-booking-row]'));
             const search = panel.querySelector('[data-booking-search]');
             const status = panel.querySelector('[data-booking-status-filter]');
             const activeOnly = panel.querySelector('[data-booking-active-only]');
             const count = panel.querySelector('[data-booking-count]');
             const applyFilters = () => {
+                const rows = Array.from(panel.querySelectorAll('[data-booking-row]'));
                 const query = (search?.value || '').trim().toLocaleLowerCase();
                 const selectedStatus = status?.value || 'all';
                 const now = Date.now();
@@ -234,28 +233,20 @@
                     const searchMatches = !query || (
                         row.dataset.bookingSearch || ''
                     ).toLocaleLowerCase().includes(query);
-                    const bookingStatus = row.dataset.bookingStatus;
-                    const paymentStatus = row.dataset.paymentStatus;
                     let statusMatches = selectedStatus === 'all';
                     if (selectedStatus === 'cancelled') {
-                        statusMatches = bookingStatus === 'CANCELLED';
+                        statusMatches = row.dataset.hasCancelled === 'true';
                     } else if (selectedStatus === 'verification') {
-                        statusMatches = bookingStatus === 'PENDING_VERIFICATION';
+                        statusMatches = row.dataset.hasPending === 'true';
                     } else if (selectedStatus === 'paid') {
-                        statusMatches = (
-                            bookingStatus === 'CONFIRMED'
-                            && paymentStatus === 'paid'
-                        );
+                        statusMatches = row.dataset.hasPaid === 'true';
                     } else if (selectedStatus === 'pending') {
-                        statusMatches = (
-                            (bookingStatus === 'CONFIRMED' || bookingStatus === 'PENDING_VERIFICATION')
-                            && paymentStatus === 'pending'
-                        );
+                        statusMatches = row.dataset.hasUnpaid === 'true';
                     }
                     const startTime = Date.parse(row.dataset.startDatetime || '');
                     const isPast = Number.isFinite(startTime) && startTime <= now;
                     const queueMatches = !activeOnly?.checked
-                        || ((bookingStatus === 'CONFIRMED' || bookingStatus === 'PENDING_VERIFICATION') && !isPast);
+                        || (row.dataset.hasActive === 'true' && !isPast);
                     row.hidden = !(searchMatches && statusMatches && queueMatches);
                     if (!row.hidden) {
                         visible += 1;
@@ -294,6 +285,7 @@
             function selectedStatusCancelled() {
                 return status?.value === 'cancelled';
             }
+                panel.applyBookingFilters = applyFilters;
                 applyFilters();
             });
         });

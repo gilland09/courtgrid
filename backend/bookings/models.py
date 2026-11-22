@@ -153,6 +153,7 @@ class Booking(models.Model):
         default='',
         unique=True,
     )
+    checkout_batch_id = models.CharField(max_length=40, blank=True, db_index=True)
     payment_verified_at = models.DateTimeField(null=True, blank=True)
     payment_verified_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

@@ -9,12 +9,6 @@
     <p class="text-body-secondary">Schedule or remove a maintenance closure for a court or entire facility.</p>
 </header>
 
-{% if messages %}
-    {% for message in messages %}
-        <div class="alert alert-{{ message.tags|default:'info' }}" role="status">{{ message }}</div>
-    {% endfor %}
-{% endif %}
-
 <section class="card mb-4">
     <div class="card-body">
         <h2 class="h4">Schedule a closure</h2>

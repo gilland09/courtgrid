@@ -1,0 +1,79 @@
+{% for batch in booking_batches %}
+{% with booking=batch.first %}
+<tr data-booking-row data-booking-status="{{ batch.status }}" data-payment-status="{{ batch.payment_status }}"
+    data-has-pending="{% if batch.pending %}true{% else %}false{% endif %}"
+    data-has-paid="{% if batch.has_paid %}true{% else %}false{% endif %}"
+    data-has-unpaid="{% if batch.has_unpaid %}true{% else %}false{% endif %}"
+    data-has-cancelled="{% if batch.has_cancelled %}true{% else %}false{% endif %}"
+    data-has-active="{% if batch.active %}true{% else %}false{% endif %}"
+    data-start-datetime="{{ batch.last_active_start.isoformat }}" data-booking-search="{{ batch.search_text }}">
+    <td>{{ booking.resource.facility.name }}</td>
+    <td>{{ booking.sport.name }}</td>
+    <td>
+        {% for slot in batch.schedules %}
+            <div>{{ slot.court }} · {{ slot.start|date:"M j, Y" }} · {{ slot.start|date:"g:i A" }} – {{ slot.end|date:"g:i A" }} ({{ slot.hours|floatformat:"-2" }} hrs)</div>
+        {% endfor %}
+        <span class="badge text-bg-light">{{ batch.slot_count }} slot{{ batch.slot_count|pluralize }} · {{ batch.hours|floatformat:"-2" }} hrs</span>
+    </td>
+    <td>{{ booking.user.get_username }}<br><span class="badge text-bg-light">{{ booking.get_booking_type_display }}</span>{% if booking.booking_type == 'organizer' %}<br><small>{{ booking.organization_name }} · {{ booking.event_name }} · {{ booking.expected_participants }} participants</small>{% endif %}</td>
+    <td>{{ booking.contact_email }}<br>{{ booking.contact_phone }}</td>
+    <td>{{ booking.participant_count }}</td>
+    <td>{{ booking.participant_names|default:"—" }}</td>
+    <td>₱{{ batch.total|floatformat:2 }}</td>
+    <td>₱{% if dashboard == 'admin' %}{{ batch.fee|floatformat:2 }}{% else %}{{ batch.outstanding_fee|floatformat:2 }}{% endif %}</td>
+    <td>
+        {% if dashboard == 'admin' %}
+            {% for item in batch.bookings %}
+                {% if item.status == 'CONFIRMED' and item.payment_status == 'paid' %}
+                    {% if item.platform_fee_collected %}
+                        <div>{{ item.payment_reference }}: Paid to Admin</div>
+                    {% else %}
+                        <form method="post" action="{% url 'settle_commission' item.pk %}">
+                            {% csrf_token %}<small>{{ item.payment_reference }} · ₱{{ item.platform_fee_amount }}</small>
+                            <button class="btn btn-sm btn-outline-primary" type="submit">Mark Commission Paid</button>
+                        </form>
+                    {% endif %}
+                {% endif %}
+            {% endfor %}
+        {% else %}
+            ₱{{ batch.payout|floatformat:2 }}
+            {% for item in batch.bookings %}
+                {% if item.platform_fee_collected %}<br><span class="badge text-bg-success">Commission Settled · Paid to Admin</span>{% endif %}
+                {% if item.status == 'CANCELLED' %}<br><span class="badge text-bg-secondary">Cancelled · excluded from totals</span>{% endif %}
+            {% endfor %}
+        {% endif %}
+    </td>
+    <td>
+        <span class="payment-receipt-badge">{{ booking.payment_method_label|default:booking.get_payment_method_display }} · {% if batch.status == 'MIXED' %}Mixed booking statuses{% else %}{{ booking.get_status_display }}{% endif %} · {% if batch.payment_status == 'mixed' %}Mixed payment statuses{% else %}{{ booking.get_payment_status_display }}{% endif %}</span>
+        <br><small>Batch ref: {{ batch.reference }}<br>Reservation ref: {{ batch.references }}</small>
+        {% if batch.status == 'MIXED' or batch.payment_status == 'mixed' %}
+            {% for item in batch.bookings %}<br><small>{{ item.payment_reference }}: {{ item.get_status_display }} · {{ item.get_payment_status_display }}</small>{% endfor %}
+        {% endif %}
+        {% if user.is_superuser or user == booking.resource.facility.owner %}
+            {% if batch.receipt %}<br><button type="button" class="btn btn-sm btn-outline-primary mt-1" data-receipt-trigger data-receipt-url="{% url 'booking-receipt' batch.receipt.pk %}" data-receipt-name="{{ batch.receipt.payment_receipt.name }}" data-receipt-ref="{{ batch.reference }}">View Receipt</button>{% endif %}
+            <div class="d-flex flex-wrap gap-1 mt-1">
+                {% if batch.verifiable %}
+                <form method="post" action="{% url 'owner_confirm_payment' batch.verifiable.pk %}" data-booking-action>
+                    {% csrf_token %}{% if dashboard == 'admin' %}<input type="hidden" name="dashboard" value="admin">{% endif %}
+                    <button class="btn btn-sm btn-outline-success" type="submit">{% if batch.pending %}Confirm Payment{% else %}Mark Payment Received{% endif %}</button>
+                </form>
+                {% endif %}
+                {% if batch.pending %}
+                <button class="btn btn-sm btn-outline-danger" type="button" data-reject-trigger data-reject-url="{% url 'owner_reject_receipt' batch.pending.pk %}" data-reject-ref="{{ batch.reference }}">Reject Receipt</button>
+                {% endif %}
+            </div>
+        {% endif %}
+        {% if batch.active %}
+        <button class="btn btn-sm btn-outline-danger mt-1" type="button" data-cancel-trigger
+            {% if dashboard == 'admin' %}data-cancel-url="{% url 'admin_cancel_booking' batch.active.pk %}"{% else %}data-cancel-url="{% url 'owner_cancel_booking' batch.active.pk %}"{% endif %}
+            data-booking-ref="{{ batch.reference }}" data-booking-player="{{ booking.user.get_username }}"
+            data-booking-venue="{{ booking.resource.facility.name }}" data-booking-slot="{{ batch.slot_count }} slots · {{ batch.hours|floatformat:'-2' }} hrs"
+            data-booking-paid="{% if batch.any_paid %}true{% else %}false{% endif %}">Cancel Booking</button>
+        {% endif %}
+        {% if batch.has_cancelled %}{% for item in batch.bookings %}{% if item.cancellation_reason %}<small class="d-block">{{ item.payment_reference }}: {{ item.cancellation_reason }}</small>{% endif %}{% endfor %}{% endif %}
+    </td>
+</tr>
+{% endwith %}
+{% empty %}
+<tr data-booking-empty><td colspan="11" class="text-body-secondary">No booking history.</td></tr>
+{% endfor %}

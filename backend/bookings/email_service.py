@@ -6,9 +6,9 @@ from urllib import request
 
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
-from django.utils import timezone
 
 from .models import Booking
+from .batches import BookingBatch
 
 logger = logging.getLogger(__name__)
 BREVO_URL = 'https://api.brevo.com/v3/smtp/email'
@@ -68,16 +68,18 @@ def _deliver(booking, subject, introduction, details, closing):
     return {'sent': True, 'reason': ''}
 
 
-def _booking_details(booking):
+def _booking_details(batch):
+    booking = batch.first
     facility = booking.resource.facility
-    start = timezone.localtime(booking.start_datetime)
-    end = timezone.localtime(booking.end_datetime)
     location = ', '.join(part for part in (facility.address, facility.barangay) if part)
     details = [
-        f'Reference: {booking.payment_reference}',
+        f'Batch reference: {batch.reference}',
+        f'Reservation references: {batch.references}',
         f'Venue: {facility.name}' + (f' - {location}' if location else ''),
-        f'Court: {booking.resource.name}',
-        f'Date and time: {start:%b %d, %Y} {start:%I:%M %p} - {end:%I:%M %p}',
+        *(f"Schedule: {item['court']} - {item['start']:%b %d, %Y} "
+          f"{item['start'].strftime('%I:%M %p').lstrip('0')} - "
+          f"{item['end'].strftime('%I:%M %p').lstrip('0')}"
+          for item in batch.schedules),
         f'Booking type: {booking.get_booking_type_display()}',
     ]
     if booking.booking_type == Booking.BookingType.ORGANIZER:
@@ -90,23 +92,47 @@ def _booking_details(booking):
 
 
 def send_booking_confirmed_email(booking):
-    details = _booking_details(booking)
+    batch = booking if isinstance(booking, BookingBatch) else BookingBatch([booking])
+    booking = batch.first
+    details = _booking_details(batch)
     details.extend([
         f'Payment method: {booking.payment_method_label or booking.get_payment_method_display()}',
-        f'Total paid for this reservation: ₱{booking.total_price:.2f}',
+        f'Total paid: ₱{batch.total:.2f}',
     ])
     return _deliver(
-        booking, f'Your CourtGrid booking is confirmed - {booking.payment_reference}',
+        booking, f'Your CourtGrid booking is confirmed - {batch.reference} ({booking.payment_reference})',
         'Congratulations! Your payment has been verified and your booking is officially confirmed.',
-        details, 'Enjoy your time at the venue! Each reservation reference is confirmed separately.',
+        details, 'Enjoy your time at the venue!',
     )
 
 
 def send_booking_rejected_email(booking):
-    details = _booking_details(booking)
+    batch = booking if isinstance(booking, BookingBatch) else BookingBatch([booking])
+    booking = batch.first
+    details = _booking_details(batch)
+    details.append(f'Payment method: {booking.payment_method_label or booking.get_payment_method_display()}')
+    details.append(f'Total: ₱{batch.total:.2f}')
     details.append(f'Reason: {booking.cancellation_reason}')
     return _deliver(
-        booking, f'Your CourtGrid receipt could not be verified - {booking.payment_reference}',
+        booking, f'Your CourtGrid receipt could not be verified - {batch.reference} ({booking.payment_reference})',
         'We are sorry, but the venue could not verify your payment receipt.',
         details, 'This reservation hold has been released. You are welcome to submit a fresh booking.',
+    )
+
+
+def send_booking_cancelled_email(batch):
+    booking = batch.first
+    details = _booking_details(batch)
+    details.extend([
+        f'Payment method: {booking.payment_method_label or booking.get_payment_method_display()}',
+        f'Cancelled booking total: ₱{batch.total:.2f}',
+        *(f'{item.payment_reference}: {item.cancellation_reason}' for item in batch.bookings),
+    ])
+    closing = (
+        'Please coordinate any refund directly with the venue.'
+        if batch.any_paid else 'The cancelled slots have been released.'
+    )
+    return _deliver(
+        booking, f'Your CourtGrid booking was cancelled - {batch.reference} ({booking.payment_reference})',
+        'We are sorry, but this booking has been cancelled.', details, closing,
     )

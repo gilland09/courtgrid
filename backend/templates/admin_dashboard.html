@@ -3,11 +3,6 @@
 {% block title %}Master Control Dashboard | CourtGrid{% endblock %}
 
 {% block content %}
-{% if messages %}
-    {% for message in messages %}
-        <div class="alert alert-{{ message.tags|default:'info' }}" role="status">{{ message }}</div>
-    {% endfor %}
-{% endif %}
 <header class="mb-4">
     <p class="text-uppercase text-body-secondary small mb-1">Administration</p>
     <h1 class="h2">Master Control Dashboard</h1>
@@ -154,75 +149,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for booking in all_bookings %}
-                        <tr
-                            data-booking-row
-                            data-booking-status="{{ booking.status }}"
-                            data-payment-status="{{ booking.payment_status }}"
-                            data-start-datetime="{{ booking.start_datetime.isoformat }}"
-                            data-booking-search="{{ booking.payment_reference }} {{ booking.user.get_username }} {{ booking.user.get_full_name }} {{ booking.resource.facility.name }} {{ booking.resource.name }} {{ booking.start_datetime|date:'Y-m-d M j, Y g:i A' }}"
-                        >
-                            <td>{{ booking.resource.facility.name }} / {{ booking.resource.name }}</td>
-                            <td>{{ booking.sport.name }}</td>
-                            <td>{{ booking.start_datetime|date:"M j, Y g:i A" }}–{{ booking.end_datetime|date:"g:i A" }}</td>
-                            <td>{{ booking.user.get_username }}</td>
-                            <td>{{ booking.contact_email }}<br>{{ booking.contact_phone }}</td>
-                            <td>{{ booking.participant_count }}</td>
-                            <td>{{ booking.participant_names|default:"—" }}</td>
-                            <td>₱{{ booking.total_price }}</td>
-                            <td>₱{{ booking.platform_fee_amount }}</td>
-                            <td>
-                                {% if booking.status == 'CANCELLED' %}
-                                    <span class="badge text-bg-secondary">Cancelled · excluded from totals</span>
-                                {% elif booking.platform_fee_collected %}
-                                    <span class="badge text-bg-success">Paid to Admin</span>
-                                {% elif booking.payment_status == 'paid' %}
-                                    <span class="badge text-bg-warning">Pending Collection</span>
-                                    <form method="post" action="{% url 'settle_commission' booking.pk %}" class="mt-1">
-                                        {% csrf_token %}
-                                        <button class="btn btn-sm btn-outline-primary" type="submit">Mark Commission Paid</button>
-                                    </form>
-                                {% else %}
-                                    <span class="payment-receipt-badge">Not yet due</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                <span class="payment-receipt-badge {% if booking.payment_status == 'pending' %}payment-pending-badge{% endif %}">{{ booking.payment_method_label|default:booking.get_payment_method_display }} · {{ booking.get_status_display }} · {{ booking.get_payment_status_display }}</span>
-                                <br>Reservation ref: {{ booking.payment_reference }}
-                                {% if booking.payment_receipt %}{% if user.is_superuser or user == booking.resource.facility.owner %}<br><button type="button" class="btn btn-sm btn-outline-primary mt-1" data-receipt-trigger data-receipt-url="{% url 'booking-receipt' booking.pk %}" data-receipt-name="{{ booking.payment_receipt.name }}" data-receipt-ref="{{ booking.payment_reference }}">View Receipt</button>{% endif %}{% endif %}
-                                <div class="d-flex flex-wrap gap-1 mt-1">
-                                    {% if booking.status == 'CONFIRMED' and booking.payment_status == 'pending' %}{% if user.is_superuser or user == booking.resource.facility.owner %}
-                                        <form method="post">
-                                            {% csrf_token %}
-                                            <input type="hidden" name="action" value="verify_payment">
-                                            <input type="hidden" name="booking_id" value="{{ booking.pk }}">
-                                            <button class="btn btn-sm btn-outline-success" type="submit">Verify Venue Payment</button>
-                                        </form>
-                                    {% endif %}{% endif %}
-                                    {% if booking.status == 'CONFIRMED' %}
-                                        <button
-                                            class="btn btn-sm btn-outline-danger admin-booking-cancel-trigger"
-                                            type="button"
-                                            data-cancel-trigger
-                                            data-cancel-url="{% url 'admin_cancel_booking' booking.pk %}"
-                                            data-booking-ref="{{ booking.payment_reference }}"
-                                            data-booking-player="{{ booking.user.get_username }}"
-                                            data-booking-venue="{{ booking.resource.facility.name }} / {{ booking.resource.name }}"
-                                            data-booking-slot="{{ booking.start_datetime|date:'M j, Y g:i A' }}–{{ booking.end_datetime|date:'g:i A' }}"
-                                            data-booking-paid="{% if booking.payment_status == 'paid' %}true{% else %}false{% endif %}"
-                                        >Cancel Booking</button>
-                                    {% elif booking.status == 'CANCELLED' %}
-                                        <span class="badge text-bg-secondary mt-1">Cancelled</span>
-                                        {% if booking.cancellation_reason %}
-                                            <small class="d-block mt-1">{{ booking.cancellation_reason }}</small>
-                                        {% endif %}
-                                    {% endif %}
-                                </div>
-                            </td>
-                        </tr>
-                    {% empty %}
-                        <tr data-booking-empty><td colspan="11" class="text-body-secondary">No booking history.</td></tr>
-                    {% endfor %}
+                    {% include 'booking_batch_rows.html' with dashboard='admin' %}
                 </tbody>
             </table>
         </div>
@@ -335,6 +262,18 @@
 
 {% block modals %}
 {% include 'receipt_review_modal.html' %}
+<div class="cg-modal-overlay" data-reject-modal aria-hidden="true">
+    <section class="cg-modal-card p-3" role="dialog" aria-modal="true" aria-labelledby="admin-reject-title">
+        <div class="d-flex justify-content-between"><h2 class="h5" id="admin-reject-title">Reject receipt?</h2><button type="button" class="btn-close" data-modal-close aria-label="Close"></button></div>
+        <p>Pending slots in batch <strong data-reject-reference></strong> will be cancelled and released.</p>
+        <form method="post" data-reject-form>
+            {% csrf_token %}<input type="hidden" name="dashboard" value="admin">
+            <label class="form-label" for="admin-rejection-reason">Reason for rejection</label>
+            <textarea class="form-control" id="admin-rejection-reason" name="rejection_reason" maxlength="180" rows="3" required></textarea>
+            <div class="d-flex gap-2 mt-3"><button type="button" class="btn btn-outline-secondary" data-modal-close>Keep Booking</button><button type="submit" class="btn btn-danger">Reject Receipt</button></div>
+        </form>
+    </section>
+</div>
 <div
     class="cg-modal-overlay"
     data-cancel-modal
@@ -358,7 +297,7 @@
                         <dt class="col-4">Venue</dt><dd class="col-8" data-modal-booking-venue></dd>
                         <dt class="col-4">Slot</dt><dd class="col-8" data-modal-booking-slot></dd>
                     </dl>
-                    <p class="text-body-secondary">This action immediately releases the selected time slot.</p>
+                    <p class="text-body-secondary">This action immediately releases all active slots in the batch.</p>
                     <label class="form-label" for="admin-cancellation-reason">Cancellation reason</label>
                     <textarea class="form-control" id="admin-cancellation-reason" name="cancellation_reason" maxlength="180" rows="3" placeholder="Optional administrative note"></textarea>
                     <div class="d-flex gap-2 mt-3">

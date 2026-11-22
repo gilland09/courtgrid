@@ -12,6 +12,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from bookings.models import Booking, UserProfile, get_user_role
+from bookings.batches import group_bookings_into_batches
 from bookings.views import owner_confirm_payment
 
 from .models import (
@@ -172,6 +173,7 @@ def owner_dashboard_context(user, onboarding_form=None):
             filter=Q(payment_status=Booking.PaymentStatus.PAID),
         ),
     )
+    batches = group_bookings_into_batches(bookings)
     return {
         'facilities': facilities,
         'facility_panels': facility_panels,
@@ -181,7 +183,8 @@ def owner_dashboard_context(user, onboarding_form=None):
         'closure_form': FacilityClosureForm(facilities=facilities),
         'closures': closures,
         'venue_bookings': bookings,
-        'pending_verification_count': bookings.filter(status=Booking.Status.PENDING_VERIFICATION).count(),
+        'booking_batches': batches,
+        'pending_verification_count': sum(bool(batch.pending) for batch in batches),
         'financial_totals': {
             key: value or Decimal('0.00')
             for key, value in financial_totals.items()

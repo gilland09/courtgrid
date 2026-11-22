@@ -13,6 +13,7 @@ from .models import Booking
 class BookingSerializer(serializers.ModelSerializer):
     user = serializers.PrimaryKeyRelatedField(read_only=True)
     resource_id = serializers.IntegerField(read_only=True)
+    facility_id = serializers.IntegerField(source='resource.facility_id', read_only=True)
     sport_id = serializers.IntegerField(read_only=True)
     facility_name = serializers.CharField(source='resource.facility.name', read_only=True)
     resource_name = serializers.CharField(source='resource.name', read_only=True)
@@ -45,6 +46,7 @@ class BookingSerializer(serializers.ModelSerializer):
             'id',
             'user',
             'resource_id',
+            'facility_id',
             'facility_name',
             'resource_name',
             'sport_id',
@@ -78,6 +80,7 @@ class BookingSerializer(serializers.ModelSerializer):
             'payment_method',
             'payment_status',
             'payment_reference',
+            'checkout_batch_id',
             'payment_verified_at',
             'payment_verified_by',
             'platform_fee_collected',

@@ -1538,3 +1538,39 @@ form textarea:focus {
 .cg-receipt-review-image { display: block; max-width: 100%; max-height: 65vh; margin: 0 auto 1rem; object-fit: contain; }
 .cg-receipt-review-frame { width: 100%; height: 65vh; border: 1px solid #dbe3dc; margin-bottom: 1rem; }
 .cg-receipt-review-image[hidden], .cg-receipt-review-frame[hidden] { display: none; }
+#cg-toast-stack {
+    position: fixed;
+    bottom: 1.25rem;
+    right: 1.25rem;
+    z-index: 99995;
+    display: grid;
+    gap: .6rem;
+    width: min(24rem, calc(100vw - 2.5rem));
+}
+.cg-toast {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .85rem 1rem;
+    border: 1px solid #b9d1c3;
+    border-left: .3rem solid #087443;
+    border-radius: .6rem;
+    background: #fff;
+    color: #173b2b;
+    box-shadow: 0 .4rem 1.5rem rgba(0, 0, 0, .18);
+    transition: opacity .25s, transform .25s;
+}
+.cg-toast-warning { border-left-color: #b77900; }
+.cg-toast-error { border-left-color: #bb2432; }
+.cg-toast-info { border-left-color: #2672a5; }
+.cg-toast button {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-size: 1.4rem;
+    line-height: 1;
+}
+.cg-toast.is-dismissing { opacity: 0; transform: translateY(.5rem); }
+@media (max-width: 767.98px) {
+    #cg-toast-stack { left: 1.25rem; right: 1.25rem; width: auto; }
+}

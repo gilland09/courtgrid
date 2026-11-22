@@ -20,6 +20,7 @@ class BookingAdmin(admin.ModelAdmin):
     list_filter = ('status', 'sport', 'resource__facility')
     search_fields = ('user__username', 'resource__name', 'resource__facility__name')
     readonly_fields = (
+        'checkout_batch_id',
         'rate_snapshot',
         'total_price',
         'participant_names',

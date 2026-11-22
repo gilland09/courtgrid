@@ -20,8 +20,8 @@ from django.views.decorators.http import require_POST
 from django.views.static import serve
 
 from bookings.models import Booking, UserProfile, get_user_role
-from bookings.email_service import send_booking_confirmed_email
-from bookings.views import report_email_result, schedule_booking_email
+from bookings.batches import group_bookings_into_batches
+from bookings.views import cancel_booking_batch, json_booking_errors, owner_confirm_payment
 from facilities.models import BookableResource, Facility, FacilityClosure, Sport
 from facilities.management_views import (
     pending_venue_verifications,
@@ -129,7 +129,11 @@ def admin_dashboard_view(request):
             return redirect('admin_dashboard')
         if action not in {'collect_commission', 'verify_payment'}:
             return redirect('admin_dashboard')
-        delivery = None
+        if action == 'verify_payment':
+            booking = get_object_or_404(Booking.objects.select_related('resource__facility'), pk=request.POST.get('booking_id'))
+            if not (request.user.is_superuser or booking.resource.facility.owner_id == request.user.pk):
+                raise PermissionDenied
+            return owner_confirm_payment(request, request.POST.get('booking_id'))
         with transaction.atomic():
             bookings = Booking.objects.select_for_update().filter(
                 status__in=(Booking.Status.CONFIRMED, Booking.Status.PENDING_VERIFICATION),
@@ -157,32 +161,6 @@ def admin_dashboard_view(request):
                         request,
                         f'Commission of ₱{booking.platform_fee_amount} marked collected from {booking.resource.facility.owner or "the venue owner"}.',
                     )
-            elif action == 'verify_payment':
-                if not (
-                    request.user.is_superuser
-                    or booking.resource.facility.owner_id == request.user.pk
-                ):
-                    raise PermissionDenied
-                if booking.payment_status != Booking.PaymentStatus.PENDING:
-                    messages.info(request, 'This reservation is not awaiting payment verification.')
-                else:
-                    was_pending = booking.status == Booking.Status.PENDING_VERIFICATION
-                    booking.status = Booking.Status.CONFIRMED
-                    booking.payment_status = Booking.PaymentStatus.PAID
-                    booking.payment_verified_at = timezone.now()
-                    booking.payment_verified_by = request.user
-                    booking.save(update_fields=(
-                        'status',
-                        'payment_status',
-                        'payment_verified_at',
-                        'payment_verified_by',
-                        'updated_at',
-                    ))
-                    messages.success(request, 'Venue payment marked verified by the platform administrator.')
-                    if was_pending:
-                        delivery = schedule_booking_email(booking, send_booking_confirmed_email)
-        if delivery is not None:
-            report_email_result(request, delivery)
         return redirect('admin_dashboard')
 
     now = timezone.now()
@@ -224,6 +202,10 @@ def admin_dashboard_view(request):
     else:
         settlement_status = 'all'
         visible_bookings = all_bookings
+    batches = group_bookings_into_batches(all_bookings)
+    if settlement_status != 'all':
+        visible_ids = set(visible_bookings.values_list('pk', flat=True))
+        batches = [batch for batch in batches if any(item.pk in visible_ids for item in batch.bookings)]
     financial_totals = confirmed_bookings.aggregate(
         gross=Sum('total_price'),
         platform_fee=Sum(
@@ -272,6 +254,7 @@ def admin_dashboard_view(request):
         'active_closures': active_closures,
         'pending_facilities': pending_venue_verifications(),
         'all_bookings': visible_bookings,
+        'booking_batches': batches,
         'settlement_status': settlement_status,
         'owner_commission_ledger': owner_commission_ledger,
         'admin_logs': LogEntry.objects.select_related(
@@ -296,65 +279,14 @@ def admin_dashboard_view(request):
     })
 
 
+@json_booking_errors
 @login_required(login_url='login')
 @require_POST
 def admin_cancel_booking(request, booking_id):
     if get_user_role(request.user) != UserProfile.Role.ADMIN:
         raise PermissionDenied
 
-    with transaction.atomic():
-        booking = get_object_or_404(
-            Booking.objects.select_for_update(),
-            pk=booking_id,
-        )
-        if booking.status == Booking.Status.CANCELLED:
-            messages.warning(request, 'This reservation is already cancelled.')
-            return redirect('admin_dashboard')
-        if booking.start_datetime <= timezone.now():
-            messages.error(
-                request,
-                'A reservation cannot be cancelled after it has started.',
-            )
-            return redirect('admin_dashboard')
-
-        submitted_reason = request.POST.get('cancellation_reason', '').strip()
-        was_paid = booking.payment_status == Booking.PaymentStatus.PAID
-        if was_paid:
-            prefix = 'Cancelled by platform administrator after payment was received'
-            reason = (
-                f'{prefix}: {submitted_reason}'
-                if submitted_reason
-                else (
-                    f'{prefix}; coordinate any refund with the facility owner '
-                    'and player.'
-                )
-            )
-        else:
-            reason = submitted_reason or 'Cancelled by platform administrator'
-
-        max_reason_length = Booking._meta.get_field(
-            'cancellation_reason',
-        ).max_length
-        booking.status = Booking.Status.CANCELLED
-        booking.cancelled_at = timezone.now()
-        booking.cancellation_reason = reason[:max_reason_length]
-        booking.save(update_fields=(
-            'status',
-            'cancelled_at',
-            'cancellation_reason',
-            'updated_at',
-        ))
-
-    messages.success(
-        request,
-        f'Reservation {booking.payment_reference} was cancelled and its time slot released.',
-    )
-    if was_paid:
-        messages.warning(
-            request,
-            'Payment had already been recorded. Coordinate any refund with the facility owner and player.',
-        )
-    return redirect('admin_dashboard')
+    return cancel_booking_batch(request, booking_id, Booking.objects.all(), 'platform administrator')
 
 
 @login_required(login_url='login')

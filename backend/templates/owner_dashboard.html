@@ -9,12 +9,6 @@
     <p class="text-body-secondary mb-0">Manage facilities, courts, rates, schedules, closures, and reservations.</p>
 </header>
 
-{% if messages %}
-    {% for message in messages %}
-        <div class="alert alert-{{ message.tags|default:'info' }}" role="status">{{ message }}</div>
-    {% endfor %}
-{% endif %}
-
 <section class="finance-kpis" aria-label="Owner financial summary">
     <article class="finance-kpi"><span>Direct Customer Collections (100%)</span><strong>₱{{ financial_totals.gross|floatformat:2 }}</strong></article>
     <article class="finance-kpi"><span>5% Commission Payable to Admin (Pending)</span><strong>₱{{ financial_totals.platform_fee|floatformat:2 }}</strong><small>Settled: ₱{{ financial_totals.platform_fee_settled|floatformat:2 }}</small></article>
@@ -407,7 +401,7 @@
             <button type="button" class="btn btn-sm btn-outline-warning" data-pending-verification-filter>Pending Verification <span class="badge text-bg-warning">{{ pending_verification_count }}</span></button>
             <span class="small text-body-secondary" data-booking-count aria-live="polite">Showing 0 of 0 bookings</span>
         </div>
-        <p class="small text-body-secondary">Each reservation reference is reviewed separately, even when several slots share one receipt.</p>
+        <p class="small text-body-secondary">Slots from one checkout are reviewed together.</p>
         <div class="booking-panel-toolbar mb-3">
             <div>
                 <label class="form-label mb-1" for="owner-booking-search">Search bookings</label>
@@ -436,76 +430,9 @@
         </div>
         <div class="booking-table-scroll">
             <table class="table table-striped align-middle">
-                <thead><tr><th>Facility / Court</th><th>Sport</th><th>Date & time</th><th>Customer</th><th>Contact</th><th>Players</th><th>Roster</th><th>Direct Collection (100%)</th><th>5% Commission Payable</th><th>95% Retained</th><th>Payment Status / Reference</th></tr></thead>
+                <thead><tr><th>Facility / Court</th><th>Sport</th><th>Date & time</th><th>Customer</th><th>Contact</th><th>Players</th><th>Roster</th><th>Batch Total (100%)</th><th>5% Commission Payable</th><th>95% Retained</th><th>Payment Status / Reference</th></tr></thead>
                 <tbody>
-                    {% for booking in venue_bookings %}
-                        <tr
-                            data-booking-row
-                            data-booking-status="{{ booking.status }}"
-                            data-payment-status="{{ booking.payment_status }}"
-                            data-start-datetime="{{ booking.start_datetime.isoformat }}"
-                            data-booking-search="{{ booking.payment_reference }} {{ booking.user.get_username }} {{ booking.user.get_full_name }} {{ booking.resource.facility.name }} {{ booking.resource.name }} {{ booking.start_datetime|date:'Y-m-d M j, Y g:i A' }}"
-                        >
-                            <td>{{ booking.resource.facility.name }} / {{ booking.resource.name }}</td>
-                            <td>{{ booking.sport.name }}</td>
-                            <td>{{ booking.start_datetime|date:"M j, Y g:i A" }}–{{ booking.end_datetime|date:"g:i A" }}</td>
-                            <td>{{ booking.user.get_username }}<br><span class="badge text-bg-light">{{ booking.get_booking_type_display }}</span>{% if booking.booking_type == 'organizer' %}<br><small>{{ booking.organization_name }} · {{ booking.event_name }} · {{ booking.expected_participants }} participants</small>{% endif %}</td>
-                            <td>{{ booking.contact_email }}<br>{{ booking.contact_phone }}</td>
-                            <td>{{ booking.participant_count }}</td>
-                            <td>{{ booking.participant_names|default:"—" }}</td>
-                            <td>₱{{ booking.total_price }}</td>
-                            <td>
-                                {% if booking.platform_fee_collected %}
-                                    <span class="badge text-bg-success">Commission Settled · Paid to Admin</span>
-                                {% elif booking.status == 'CANCELLED' %}
-                                    <span class="badge text-bg-secondary">Cancelled · excluded from totals</span>
-                                {% elif booking.payment_status == 'paid' %}
-                                    <span class="badge text-bg-warning">5% Commission Payable to Admin (Pending)</span>
-                                    <br>₱{{ booking.platform_fee_amount }}
-                                {% else %}
-                                    <span class="text-body-secondary">Not due until payment is verified</span>
-                                {% endif %}
-                            </td>
-                            <td>₱{{ booking.owner_payout_amount }}</td>
-                            <td>
-                                <span class="payment-receipt-badge {% if booking.payment_status == 'pending' %}payment-pending-badge{% endif %}">{{ booking.payment_method_label|default:booking.get_payment_method_display }} · {{ booking.get_status_display }} · {{ booking.get_payment_status_display }}</span>
-                                <br><small>Reservation ref: {{ booking.payment_reference }}</small>
-                                {% if booking.payment_receipt %}<br><button type="button" class="btn btn-sm btn-outline-primary mt-1" data-receipt-trigger data-receipt-url="{% url 'booking-receipt' booking.pk %}" data-receipt-name="{{ booking.payment_receipt.name }}" data-receipt-ref="{{ booking.payment_reference }}">View Receipt</button>{% endif %}
-                                <div class="d-flex flex-wrap gap-1 mt-1">
-                                    {% if booking.status != 'CANCELLED' and booking.payment_status == 'pending' %}
-                                        <form method="post" action="{% url 'owner_confirm_payment' booking.pk %}">
-                                            {% csrf_token %}
-                                            <button class="btn btn-sm btn-outline-success" type="submit">{% if booking.status == 'PENDING_VERIFICATION' %}Confirm Payment{% else %}Mark Payment Received{% endif %}</button>
-                                        </form>
-                                    {% elif booking.payment_verified_at %}
-                                        <small class="align-self-center">Verified {{ booking.payment_verified_at|date:"M j, Y g:i A" }}</small>
-                                    {% endif %}
-                                    {% if booking.status == 'PENDING_VERIFICATION' %}
-                                        <button class="btn btn-sm btn-outline-danger" type="button" data-reject-trigger data-reject-url="{% url 'owner_reject_receipt' booking.pk %}" data-reject-ref="{{ booking.payment_reference }}">Reject Receipt</button>
-                                    {% elif booking.status == 'CONFIRMED' %}
-                                        <button
-                                            class="btn btn-sm btn-outline-danger owner-booking-cancel-trigger"
-                                            type="button"
-                                            data-cancel-trigger
-                                            data-cancel-url="{% url 'owner_cancel_booking' booking.pk %}"
-                                            data-booking-ref="{{ booking.payment_reference }}"
-                                            data-booking-player="{{ booking.user.get_username }}"
-                                            data-booking-venue="{{ booking.resource.facility.name }} / {{ booking.resource.name }}"
-                                            data-booking-slot="{{ booking.start_datetime|date:'M j, Y g:i A' }}–{{ booking.end_datetime|date:'g:i A' }}"
-                                            data-booking-paid="{% if booking.payment_status == 'paid' %}true{% else %}false{% endif %}"
-                                        >Cancel Booking</button>
-                                    {% else %}
-                                        <span class="badge text-bg-secondary mt-1">Cancelled</span>
-                                        {% if booking.cancellation_reason %}
-                                            <small class="d-block mt-1">{{ booking.cancellation_reason }}</small>
-                                        {% endif %}
-                                    {% endif %}
-                                </div>
-                            </td>
-                        </tr>
-                    {% empty %}
-                        <tr data-booking-empty><td colspan="11" class="text-body-secondary">No venue booking history.</td></tr>
-                    {% endfor %}
+                    {% include 'booking_batch_rows.html' with dashboard='owner' %}
                 </tbody>
             </table>
         </div>
@@ -553,7 +480,7 @@ document.addEventListener('DOMContentLoaded', () => {
 <div class="cg-modal-overlay" data-reject-modal aria-hidden="true">
     <section class="cg-modal-card p-3" role="dialog" aria-modal="true" aria-labelledby="reject-receipt-title">
         <div class="d-flex justify-content-between"><h2 class="h5" id="reject-receipt-title">Reject receipt?</h2><button type="button" class="btn-close" data-modal-close aria-label="Close"></button></div>
-        <p>Reservation <strong data-reject-reference></strong> will be cancelled and its slot released. Other references sharing this receipt are unaffected.</p>
+        <p>Pending slots in batch <strong data-reject-reference></strong> will be cancelled and released.</p>
         <form method="post" data-reject-form>
             {% csrf_token %}
             <label class="form-label" for="rejection-reason">Reason for rejection</label>
@@ -600,7 +527,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <dt class="col-4">Venue</dt><dd class="col-8" data-modal-booking-venue></dd>
                         <dt class="col-4">Slot</dt><dd class="col-8" data-modal-booking-slot></dd>
                     </dl>
-                    <p class="text-body-secondary">This action immediately releases the selected time slot.</p>
+                    <p class="text-body-secondary">This action immediately releases all active slots in the batch.</p>
                     <label class="form-label" for="owner-cancellation-reason">Cancellation reason</label>
                     <textarea class="form-control" id="owner-cancellation-reason" name="cancellation_reason" maxlength="180" rows="3" placeholder="Optional note for the booking record"></textarea>
                     <div class="d-flex gap-2 mt-3">

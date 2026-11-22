@@ -10,12 +10,6 @@
     <a class="btn btn-outline-primary" href="{% url 'admin_dashboard' %}">Back to Admin Dashboard</a>
 </header>
 
-{% if messages %}
-    {% for message in messages %}
-        <div class="alert alert-{{ message.tags|default:'info' }}" role="status">{{ message }}</div>
-    {% endfor %}
-{% endif %}
-
 <section class="card mb-4" aria-labelledby="pending-facilities-heading">
     <div class="card-body">
         <h2 id="pending-facilities-heading" class="h4">Pending Venue Verification Queue</h2>
