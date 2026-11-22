@@ -1,0 +1,8 @@
+{% for booking in todays_bookings %}
+    <tr>
+        <td>{{ booking.resource.facility.name }}</td><td>{{ booking.resource.name }}</td><td>{{ booking.sport.name }}</td>
+        <td>{{ booking.start_datetime|date:"g:i A" }}</td><td>{{ booking.end_datetime|date:"g:i A" }}</td><td>{{ booking.user.get_username }}</td>
+    </tr>
+{% empty %}
+    <tr><td colspan="6" class="text-body-secondary">No confirmed bookings today.</td></tr>
+{% endfor %}

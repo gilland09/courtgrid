@@ -1,0 +1,8 @@
+{% for row in owner_commission_ledger %}
+    <tr>
+        <td>{{ row.resource__facility__owner__first_name }} {{ row.resource__facility__owner__last_name }} ({{ row.resource__facility__owner__username }})</td>
+        <td>{{ row.resource__facility__name }}</td><td>₱{{ row.gross|floatformat:2 }}</td><td>₱{{ row.commission_owed|floatformat:2 }}</td>
+    </tr>
+{% empty %}
+    <tr><td colspan="4" class="text-body-secondary">No owner commissions are currently due.</td></tr>
+{% endfor %}

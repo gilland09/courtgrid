@@ -14,10 +14,10 @@
 </header>
 
 <section class="finance-kpis" aria-label="Marketplace monetization summary">
-    <article class="finance-kpi"><span>Total Marketplace Bookings (GMV)</span><strong>₱{{ financial_totals.gross|floatformat:2 }}</strong></article>
-    <article class="finance-kpi is-revenue"><span>5% Platform Commission Collectible from Owners</span><strong>₱{{ financial_totals.platform_fee|floatformat:2 }}</strong></article>
-    <article class="finance-kpi"><span>Owner Direct Collections (95% Retained)</span><strong>₱{{ financial_totals.owner_payout|floatformat:2 }}</strong></article>
-    <article class="finance-kpi"><span>Active Verified Venues &amp; Courts</span><strong>{{ active_verified_venues }} venues · {{ active_courts }} courts</strong></article>
+    <article class="finance-kpi"><span>Total Marketplace Bookings (GMV)</span><strong data-live-kpi="gross">₱{{ financial_totals.gross|floatformat:2 }}</strong></article>
+    <article class="finance-kpi is-revenue"><span>5% Platform Commission Collectible from Owners</span><strong data-live-kpi="platform_fee">₱{{ financial_totals.platform_fee|floatformat:2 }}</strong></article>
+    <article class="finance-kpi"><span>Owner Direct Collections (95% Retained)</span><strong data-live-kpi="owner_payout">₱{{ financial_totals.owner_payout|floatformat:2 }}</strong></article>
+    <article class="finance-kpi"><span>Active Verified Venues &amp; Courts</span><strong data-live-venues>{{ active_verified_venues }} venues · {{ active_courts }} courts</strong></article>
 </section>
 <p class="payment-processing-notice mb-4">Payments are made directly to venue owners. CourtGrid does not process customer funds; owners remit platform commissions manually.</p>
 
@@ -77,29 +77,18 @@
                         <th scope="col">Booked by</th>
                     </tr>
                 </thead>
-                <tbody>
-                    {% for booking in todays_bookings %}
-                        <tr>
-                            <td>{{ booking.resource.facility.name }}</td>
-                            <td>{{ booking.resource.name }}</td>
-                            <td>{{ booking.sport.name }}</td>
-                            <td>{{ booking.start_datetime|date:"g:i A" }}</td>
-                            <td>{{ booking.end_datetime|date:"g:i A" }}</td>
-                            <td>{{ booking.user.get_username }}</td>
-                        </tr>
-                    {% empty %}
-                        <tr><td colspan="6" class="text-body-secondary">No confirmed bookings today.</td></tr>
-                    {% endfor %}
+                <tbody data-live-today>
+                    {% include 'admin_live_today.html' %}
                 </tbody>
             </table>
         </div>
     </div>
 </section>
 
-<section class="card mb-4" aria-labelledby="master-bookings-heading" data-booking-panel>
+<section class="card mb-4" aria-labelledby="master-bookings-heading" data-booking-panel {% if live_version %}data-live-sync-url="{% url 'admin-live-state' %}" data-live-sync-version="{{ live_version }}"{% endif %}>
     <div class="card-body">
         <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-            <h2 id="master-bookings-heading" class="h4 mb-0">All Confirmed Bookings &amp; History</h2>
+            <h2 id="master-bookings-heading" class="h4 mb-0">All Confirmed Bookings &amp; History {% if live_version %}<span class="cg-live-badge">Live</span>{% endif %}</h2>
             <span class="small text-body-secondary" data-booking-count aria-live="polite">Showing 0 of 0 bookings</span>
         </div>
         <form method="get" class="row g-2 align-items-end mb-3">
@@ -163,17 +152,8 @@
         <div class="table-responsive">
             <table class="table table-striped align-middle">
                 <thead><tr><th>Owner</th><th>Facility</th><th>Booking GMV</th><th>Commission Owed</th></tr></thead>
-                <tbody>
-                    {% for row in owner_commission_ledger %}
-                        <tr>
-                            <td>{{ row.resource__facility__owner__first_name }} {{ row.resource__facility__owner__last_name }} ({{ row.resource__facility__owner__username }})</td>
-                            <td>{{ row.resource__facility__name }}</td>
-                            <td>₱{{ row.gross|floatformat:2 }}</td>
-                            <td>₱{{ row.commission_owed|floatformat:2 }}</td>
-                        </tr>
-                    {% empty %}
-                        <tr><td colspan="4" class="text-body-secondary">No owner commissions are currently due.</td></tr>
-                    {% endfor %}
+                <tbody data-live-ledger>
+                    {% include 'admin_live_ledger.html' %}
                 </tbody>
             </table>
         </div>
@@ -241,18 +221,8 @@
                         <th scope="col">End</th>
                     </tr>
                 </thead>
-                <tbody>
-                    {% for closure in active_closures %}
-                        <tr>
-                            <td>{{ closure.facility.name }}</td>
-                            <td>{{ closure.resource.name|default:"All resources" }}</td>
-                            <td>{{ closure.reason }}</td>
-                            <td>{{ closure.start_datetime|date:"M j, Y g:i A" }}</td>
-                            <td>{{ closure.end_datetime|date:"M j, Y g:i A" }}</td>
-                        </tr>
-                    {% empty %}
-                        <tr><td colspan="5" class="text-body-secondary">No active closures.</td></tr>
-                    {% endfor %}
+                <tbody data-live-closures>
+                    {% include 'admin_live_closures.html' with closures=active_closures %}
                 </tbody>
             </table>
         </div>

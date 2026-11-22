@@ -10,9 +10,9 @@
 </header>
 
 <section class="finance-kpis" aria-label="Owner financial summary">
-    <article class="finance-kpi"><span>Direct Customer Collections (100%)</span><strong>₱{{ financial_totals.gross|floatformat:2 }}</strong></article>
-    <article class="finance-kpi"><span>5% Commission Payable to Admin (Pending)</span><strong>₱{{ financial_totals.platform_fee|floatformat:2 }}</strong><small>Settled: ₱{{ financial_totals.platform_fee_settled|floatformat:2 }}</small></article>
-    <article class="finance-kpi is-revenue"><span>Net Owner Retained Earnings (95%)</span><strong>₱{{ financial_totals.owner_payout|floatformat:2 }}</strong></article>
+    <article class="finance-kpi"><span>Direct Customer Collections (100%)</span><strong data-live-kpi="gross">₱{{ financial_totals.gross|floatformat:2 }}</strong></article>
+    <article class="finance-kpi"><span>5% Commission Payable to Admin (Pending)</span><strong data-live-kpi="platform_fee">₱{{ financial_totals.platform_fee|floatformat:2 }}</strong><small data-live-settled>Settled: ₱{{ financial_totals.platform_fee_settled|floatformat:2 }}</small></article>
+    <article class="finance-kpi is-revenue"><span>Net Owner Retained Earnings (95%)</span><strong data-live-kpi="owner_payout">₱{{ financial_totals.owner_payout|floatformat:2 }}</strong></article>
 </section>
 <p class="payment-processing-notice mb-4">Only venue-verified customer payments count as collections. CourtGrid does not process customer transfers; platform commissions are manually collected from owners.</p>
 
@@ -378,26 +378,14 @@
             {{ closure_form.as_p }}
             <div class="col-12"><button class="btn btn-primary" type="submit">Schedule Closure</button></div>
         </form>
-        {% for closure in closures %}
-            <div class="d-flex justify-content-between align-items-center border-top py-2">
-                <span><strong>{{ closure.facility.name }}</strong> · {{ closure.resource.name|default:"All courts" }} · {{ closure.start_datetime|date:"M j, Y g:i A" }}–{{ closure.end_datetime|date:"g:i A" }} · {{ closure.reason }}</span>
-                <form method="post">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="delete_closure">
-                    <input type="hidden" name="closure_id" value="{{ closure.pk }}">
-                    <button class="btn btn-outline-danger btn-sm" type="submit">Remove</button>
-                </form>
-            </div>
-        {% empty %}
-            <p class="text-body-secondary mb-0">No closures scheduled.</p>
-        {% endfor %}
+        <div data-live-closures>{% include 'owner_live_closures.html' %}</div>
     </div>
 </section>
 
-<section class="card" data-booking-panel>
+<section class="card" data-booking-panel {% if live_version %}data-live-sync-url="{% url 'owner-live-state' %}" data-live-sync-version="{{ live_version }}"{% endif %}>
     <div class="card-body">
         <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-            <h2 class="h4 mb-0">Venue bookings</h2>
+            <h2 class="h4 mb-0">Venue bookings {% if live_version %}<span class="cg-live-badge">Live</span>{% endif %}</h2>
             <button type="button" class="btn btn-sm btn-outline-warning" data-pending-verification-filter>Pending Verification <span class="badge text-bg-warning">{{ pending_verification_count }}</span></button>
             <span class="small text-body-secondary" data-booking-count aria-live="polite">Showing 0 of 0 bookings</span>
         </div>

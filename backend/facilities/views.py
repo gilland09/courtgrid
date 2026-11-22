@@ -152,6 +152,7 @@ class FacilityDetailView(FacilityDiscoveryQuerysetMixin, RetrieveAPIView):
 
 
 def facility_detail_view(request, pk):
+    from bookings.live_sync import availability_version
     facility = get_object_or_404(
         Facility.objects.filter(
             is_active=True,
@@ -266,6 +267,7 @@ def facility_detail_view(request, pk):
         'sport_rates': sport_rates,
         'booker_email': request.user.email if request.user.is_authenticated else '',
         'booker_phone': phone_number,
+        'live_version': availability_version(facility.pk),
     })
 
 

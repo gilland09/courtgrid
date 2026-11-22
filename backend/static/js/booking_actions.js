@@ -12,6 +12,7 @@ document.addEventListener('submit', async (event) => {
     const tableY = scroll?.scrollTop;
     const tableX = scroll?.scrollLeft;
     button.disabled = true;
+    window.CourtGridLive.setBusy(true);
     button.textContent = 'Working…';
     if (overlay) overlay.dataset.modalBusy = 'true';
     try {
@@ -53,6 +54,7 @@ document.addEventListener('submit', async (event) => {
             if (current && replacement) current.replaceWith(replacement);
         });
         panel.applyBookingFilters();
+        panel.liveSync?.setVersion(payload.live_version);
         scroll.scrollTop = tableY;
         scroll.scrollLeft = tableX;
         window.scrollTo(window.scrollX, pageY);
@@ -60,6 +62,7 @@ document.addEventListener('submit', async (event) => {
         console.error('Booking action failed.', error);
         window.CourtGridToast.show(error.message || 'The booking action could not be completed.', 'error');
     } finally {
+        window.CourtGridLive.setBusy(false);
         if (overlay) delete overlay.dataset.modalBusy;
         button.disabled = false;
         button.textContent = label;

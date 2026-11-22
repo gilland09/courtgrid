@@ -4,7 +4,7 @@
 {% block title %}{{ facility.name }} | CourtGrid{% endblock %}
 
 {% block content %}
-<section id="facility-detail" class="facility-page mb-5" data-facility-id="{{ facility.pk }}" data-facility-name="{{ facility.name }}" data-authenticated="{% if user.is_authenticated %}true{% else %}false{% endif %}" data-customer-name="{% if user.is_authenticated %}{{ user.get_full_name|default:user.username }}{% endif %}">
+<section id="facility-detail" class="facility-page mb-5" data-live-sync-url="{% url 'facility-availability-version' facility.pk %}" data-live-sync-version="{{ live_version }}" data-facility-id="{{ facility.pk }}" data-facility-name="{{ facility.name }}" data-authenticated="{% if user.is_authenticated %}true{% else %}false{% endif %}" data-customer-name="{% if user.is_authenticated %}{{ user.get_full_name|default:user.username }}{% endif %}">
     <a href="{% url 'home' %}" class="link-secondary text-decoration-none">&larr; Back to facilities</a>
     <header class="facility-detail-header mt-3">
         <div>
@@ -133,7 +133,7 @@
 
         <section aria-labelledby="availability-heading">
             <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-3">
-                <div><p class="text-uppercase small fw-semibold text-body-secondary mb-1">Live availability</p><h2 id="availability-heading" class="h4 mb-0">Court schedule</h2></div>
+                <div><p class="text-uppercase small fw-semibold text-body-secondary mb-1">Live availability</p><h2 id="availability-heading" class="h4 mb-0">Court schedule <span class="cg-live-badge">Live</span></h2></div>
                 <div class="schedule-legend"><span><i class="legend-dot available"></i> Available</span><span><i class="legend-dot selected"></i> Selected</span><span><i class="legend-dot unavailable"></i> Booked / Closed</span><span><i class="legend-dot passed"></i> Passed</span></div>
             </div>
             <div id="court-switch-notice" class="alert alert-warning" hidden>

@@ -1,0 +1,11 @@
+{% for closure in closures %}
+    <tr>
+        <td>{{ closure.facility.name }}</td>
+        <td>{{ closure.resource.name|default:"All resources" }}</td>
+        <td>{{ closure.reason }}</td>
+        <td>{{ closure.start_datetime|date:"M j, Y g:i A" }}</td>
+        <td>{{ closure.end_datetime|date:"M j, Y g:i A" }}</td>
+    </tr>
+{% empty %}
+    <tr><td colspan="5" class="text-body-secondary">No active closures.</td></tr>
+{% endfor %}

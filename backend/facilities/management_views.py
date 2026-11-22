@@ -93,6 +93,12 @@ def court_management_panel(facility, resource):
 
 
 def owner_dashboard_context(user, onboarding_form=None):
+    from bookings.live_sync import dashboard_version
+
+    live_version = (
+        dashboard_version(user)
+        if get_user_role(user) == UserProfile.Role.COURT_OWNER else ''
+    )
     facilities = owner_facilities(user).prefetch_related(
         'facility_sports__sport',
         'resources',
@@ -184,6 +190,7 @@ def owner_dashboard_context(user, onboarding_form=None):
         'closures': closures,
         'venue_bookings': bookings,
         'booking_batches': batches,
+        'live_version': live_version,
         'pending_verification_count': sum(bool(batch.pending) for batch in batches),
         'financial_totals': {
             key: value or Decimal('0.00')

@@ -8,20 +8,21 @@
     <div class="d-flex flex-wrap justify-content-between align-items-end gap-3">
         <div>
             <p class="text-uppercase text-body-secondary small mb-1">Your account</p>
-            <h1 class="h2 mb-1">My Bookings</h1>
+            <h1 class="h2 mb-1">My Bookings <span class="cg-live-badge">Live</span></h1>
             <p class="text-body-secondary mb-0">Your reservations, all in one place.</p>
         </div>
         <div id="booking-tabs" class="booking-tabs" role="tablist" aria-label="Filter bookings">
-            <button type="button" class="booking-tab is-active" data-booking-tab="upcoming" role="tab" aria-selected="true">Upcoming · <span data-booking-count="upcoming">0</span></button>
-            <button type="button" class="booking-tab" data-booking-tab="past" role="tab" aria-selected="false">Past · <span data-booking-count="past">0</span></button>
+            <button type="button" class="booking-tab is-active" data-booking-tab="upcoming" role="tab" aria-selected="true">Upcoming · <span data-booking-count="upcoming">{{ summary.upcoming }}</span></button>
+            <button type="button" class="booking-tab" data-booking-tab="past" role="tab" aria-selected="false">Past · <span data-booking-count="past">{{ summary.past }}</span></button>
         </div>
     </div>
 </header>
 
 <form id="booking-csrf-form" class="d-none">{% csrf_token %}</form>
-<div id="bookings-container" aria-live="polite">
-    <p class="text-body-secondary">Loading your bookings...</p>
+<div id="bookings-container" aria-live="polite" data-live-sync-url="{% url 'customer-live-state' %}" data-live-sync-version="{{ live_version }}">
+    {% include 'my_booking_cards.html' %}
 </div>
+{{ bookings|json_script:"my-bookings-data" }}
 {% endblock %}
 
 {% block modals %}

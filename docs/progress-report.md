@@ -4,7 +4,7 @@
 
 - **Phase 3 / batch review:** Owners can review a checkout's private receipt, confirm or reject its pending slots together, and cancel its active slots together. Customers receive one confirmation, rejection, or owner/admin cancellation email after commit.
 - **Backend and owner portal:** Phase 2A payment-first support is implemented. Multiple courts, venue photos, and amenities remain available.
-- **Latest automated validation (2026-11-22):** 153 Django tests, 12 FastAPI evaluator tests, and 9 JavaScript helper tests passed.
+- **Latest automated validation:** 158 Django tests, 12 FastAPI evaluator tests, and 9 JavaScript helper tests passed.
 
 ## Payment-first API
 
@@ -16,6 +16,7 @@
 - New reservations hold slots in `PENDING_VERIFICATION` until payment is marked received. Existing confirmed bookings retain their previous status and financial treatment.
 - New checkouts share a batch identifier while retaining individual reservation references. Review and cancellation apply to the relevant slots in the same customer and venue batch; older bookings without an identifier remain independent. Cancellation is rejected for the whole active batch if any active slot has started. Customer cancellation follows the same batch rule.
 - Owner and admin booking actions support JSON and standard form redirects; the dashboards refresh their grouped table and financial summary without a page reload. Mixed-status batches remain visible with their individual audit records.
+- Owner, superuser admin, and customer booking pages use short-lived, role-scoped version polling to refresh booking lists and totals. Venue schedules poll an opaque availability version and remove conflicting cart slots, including while checkout is open. Polling pauses in hidden tabs and backs off on network errors.
 - Availability is rebuilt from current booking rows for both Django and the FastAPI request; there is no availability-result cache to invalidate.
 
 ## Booking notifications
@@ -42,9 +43,9 @@ The parallel measurement includes request serialization and HTTP transport, as w
 
 ## Test Coverage
 
-The latest automated run passed **174 tests**:
+The latest automated run passed **179 tests**:
 
-- **153 Django tests:** Validate batch checkout and actions, payment-first bookings, receipt review and notifications, payment methods, slot holds, discovery, concurrency, availability, owner management, court-specific rates, photos, amenities, and tenant isolation.
+- **158 Django tests:** Validate live-state polling and isolation, batch checkout and actions, payment-first bookings, receipt review and notifications, payment methods, slot holds, discovery, concurrency, availability, owner management, court-specific rates, photos, amenities, and tenant isolation.
 - **12 FastAPI tests:** Validate evaluator behavior, process-pool execution, scheduling, endpoint responses, and Pydantic schemas.
 - **9 JavaScript helper tests:** Validate existing slot/date/payment behavior and court-specific rate calculation.
 - `manage.py check`, `makemigrations --check --dry-run`, production WhiteNoise `collectstatic`, Node syntax checks, and `git diff --check` passed. Photo validation also passed with the image library unavailable.

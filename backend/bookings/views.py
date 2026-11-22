@@ -132,8 +132,17 @@ def action_response(request, notices, batch=None, http_status=200):
             owner_payout=Sum('owner_payout_amount', filter=paid),
         )
         pending = scope.filter(status=Booking.Status.PENDING_VERIFICATION).select_related('user', 'resource__facility', 'sport')
+        from .live_sync import dashboard_version
+
+        live_version = (
+            dashboard_version(request.user, admin=True) if admin and request.user.is_superuser
+            else dashboard_version(request.user)
+            if not admin and get_user_role(request.user) == UserProfile.Role.COURT_OWNER
+            else ''
+        )
         return JsonResponse({
             'success': True,
+            'live_version': live_version,
             'messages': [{'level': level, 'message': text} for level, text in notices],
             'batch': {
                 'reference': batch.reference,

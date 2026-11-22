@@ -1,0 +1,6 @@
+<div data-booking-list="upcoming">
+    {% include 'my_booking_card_list.html' with batches=upcoming_batches tab='upcoming' %}
+</div>
+<div data-booking-list="past" hidden>
+    {% include 'my_booking_card_list.html' with batches=past_batches tab='past' %}
+</div>

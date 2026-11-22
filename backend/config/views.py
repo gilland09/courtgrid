@@ -163,6 +163,9 @@ def admin_dashboard_view(request):
                     )
         return redirect('admin_dashboard')
 
+    from bookings.live_sync import dashboard_version
+
+    live_version = dashboard_version(request.user, admin=True) if request.user.is_superuser else ''
     now = timezone.now()
     today = timezone.localtime(now).date()
     todays_bookings = (
@@ -255,6 +258,7 @@ def admin_dashboard_view(request):
         'pending_facilities': pending_venue_verifications(),
         'all_bookings': visible_bookings,
         'booking_batches': batches,
+        'live_version': live_version,
         'settlement_status': settlement_status,
         'owner_commission_ledger': owner_commission_ledger,
         'admin_logs': LogEntry.objects.select_related(
@@ -365,4 +369,9 @@ def settle_commission_view(request, booking_id):
 
 @login_required(login_url='login')
 def my_bookings_view(request):
-    return render(request, 'my_bookings.html')
+    from bookings.live_sync import booking_version, customer_data
+
+    version = booking_version(Booking.objects.filter(user=request.user))
+    return render(request, 'my_bookings.html', {
+        **customer_data(request), 'live_version': version,
+    })

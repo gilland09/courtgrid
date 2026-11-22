@@ -1,0 +1,39 @@
+{% if batches %}
+<div class="row g-3">
+    {% for batch in batches %}
+    {% with booking=batch.first %}
+    <div class="col-12 col-lg-6"><article class="reservation-card h-100"><div class="reservation-card-body">
+        <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+            <div><h2 class="h5 mb-1">{{ booking.resource.facility.name }}</h2><p class="small text-body-secondary mb-0">{{ batch.slot_count }} slots · {{ batch.hours|floatformat:"-2" }} hrs</p></div>
+            <span class="reservation-status {% if batch.status == 'CONFIRMED' %}is-confirmed{% elif batch.status == 'CANCELLED' %}is-cancelled{% else %}is-pending{% endif %}">{% if batch.status == 'MIXED' %}Mixed statuses{% else %}{{ booking.get_status_display }}{% endif %}</span>
+        </div>
+        <p class="reservation-detail"><span>Sport</span><strong>{{ booking.sport.name }}</strong></p>
+        {% for slot in batch.schedules %}<p class="reservation-detail"><span>Schedule</span><strong>{{ slot.court }} · {{ slot.start|date:"M j, Y g:i A" }} – {{ slot.end|date:"g:i A" }} ({{ slot.hours|floatformat:"-2" }} hrs)</strong></p>{% endfor %}
+        <p class="reservation-detail"><span>Participants</span><strong>{{ booking.participant_count }}</strong></p>
+        {% if booking.booking_type == 'organizer' %}
+        <p class="reservation-detail"><span>Organization</span><strong>{{ booking.organization_name }}</strong></p>
+        <p class="reservation-detail"><span>Event</span><strong>{{ booking.event_name }}</strong></p>
+        <p class="reservation-detail"><span>Expected participants</span><strong>{{ booking.expected_participants }}</strong></p>
+        {% endif %}
+        <p class="reservation-detail"><span>Price</span><strong>{{ booking.currency }} {{ batch.total|floatformat:2 }}</strong></p>
+        <p class="reservation-detail"><span>Payment method</span><strong>{{ booking.payment_method_label|default:booking.get_payment_method_display }}</strong></p>
+        <span class="payment-receipt-badge mb-2 {% if batch.payment_status == 'pending' %}payment-pending-badge{% endif %}">{% if batch.payment_status == 'mixed' %}Mixed payment statuses{% elif batch.payment_status == 'pending' %}Payment pending · venue verification{% else %}{{ booking.get_payment_status_display }}{% endif %}</span>
+        <p class="reservation-detail"><span>Batch reference</span><strong>{{ batch.reference }}</strong></p>
+        <p class="reservation-detail"><span>Reservation references</span><strong>{{ batch.references }}</strong></p>
+        {% for item in batch.bookings %}
+            {% if batch.status == 'MIXED' or batch.payment_status == 'mixed' %}<p class="reservation-detail"><span>{{ item.payment_reference }}</span><strong>{{ item.get_status_display }} · {{ item.get_payment_status_display }}</strong></p>{% endif %}
+            {% if item.cancellation_reason %}<p class="reservation-detail"><span>Cancellation reason ({{ item.payment_reference }})</span><strong>{{ item.cancellation_reason }}</strong></p>{% endif %}
+        {% endfor %}
+        <button type="button" class="btn btn-outline-primary booking-receipt-button mt-2" data-booking-id="{{ booking.pk }}">View Reservation</button>
+        {% if batch.receipt %}<a class="btn btn-outline-primary mt-2 ms-2" href="{% url 'booking-receipt' batch.receipt.pk %}">View Receipt</a>{% endif %}
+        {% if batch.can_cancel %}<button type="button" class="btn btn-outline-danger booking-cancel-button mt-2" data-booking-id="{{ booking.pk }}">Cancel Booking</button>{% endif %}
+    </div></article></div>
+    {% endwith %}
+    {% endfor %}
+</div>
+{% else %}
+<section class="booking-empty-state"><h2 class="h4">Nothing here yet</h2>
+    <p class="text-body-secondary">{% if tab == 'upcoming' %}Ready for your next game? Find a court and reserve your time.{% else %}Completed and cancelled reservations will appear here.{% endif %}</p>
+    {% if tab == 'upcoming' %}<a class="btn btn-primary booking-pill-button" href="{% url 'home' %}">Book a court</a>{% endif %}
+</section>
+{% endif %}

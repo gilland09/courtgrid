@@ -21,7 +21,7 @@ from rest_framework.test import APIClient
 from facilities.availability import active_resource_offerings, evaluate_serial_slots
 from facilities.availability_client import serialize_availability_request
 from facilities.models import (
-    BookableResource, Facility, FacilityOperatingHours, FacilityPaymentMethod,
+    BookableResource, Facility, FacilityClosure, FacilityOperatingHours, FacilityPaymentMethod,
     FacilitySport, ResourceSport, Sport, SportSchedule,
 )
 from facilities.test_management_portals import _png_image, assert_rendered_scripts_parse
@@ -260,6 +260,7 @@ class PaymentFirstTests(TestCase):
                 'expected-participants', 'range-start', 'range-end', 'range-courts',
                 "Choose How You'll Pay", 'GCash', 'payment-receipt',
                 'policy-accepted', 'id="confirm-booking"', 'disabled',
+                'data-live-sync-url=', 'data-live-sync-version=',
             ):
                 self.assertContains(detail, content)
             html = detail.content.decode()
@@ -273,6 +274,8 @@ class PaymentFirstTests(TestCase):
             self.client.force_login(user)
             page = self.client.get(reverse(route))
             self.assertEqual(page.status_code, 200)
+            self.assertContains(page, 'data-live-sync-url=')
+            self.assertContains(page, 'data-live-sync-version=')
             assert_rendered_scripts_parse(self, page.content.decode())
 
     def test_receipt_permissions_and_no_public_media_url(self):
@@ -659,6 +662,148 @@ class PaymentFirstTests(TestCase):
         page = self.client.get(reverse('owner_dashboard'))
         self.assertContains(page, 'id="cg-toast-stack"', count=1)
         self.assertContains(page, 'Provide a rejection reason of at most 180 characters.', count=1)
+
+    def test_owner_and_admin_live_versions_and_isolation(self):
+        UserProfile.objects.create(user=self.other_owner, role=UserProfile.Role.COURT_OWNER)
+        self.client.force_login(self.owner)
+        owner_url = reverse('owner-live-state')
+        initial = self.client.get(owner_url).json()
+        self.assertTrue(initial['changed'])
+        self.assertIn('no-store', self.client.get(owner_url).headers['Cache-Control'])
+        self.assertFalse(self.client.get(owner_url, {'version': initial['version']}).json()['changed'])
+        self.client.force_authenticate(self.user)
+        booking = self.create_three_slot_checkout()[0]
+        self.client.force_login(self.owner)
+        changed = self.client.get(owner_url, {'version': initial['version']}).json()
+        self.assertTrue(changed['changed'])
+        self.assertIn(booking.checkout_batch_id, changed['rows_html'])
+        self.assertIn('csrfmiddlewaretoken', changed['rows_html'])
+        self.assertEqual(changed['summary']['pending'], 1)
+        self.client.force_login(self.other_owner)
+        other = self.client.get(owner_url).json()
+        self.assertNotIn(booking.checkout_batch_id, other['rows_html'])
+        self.assertEqual(self.client.get(reverse('admin-live-state')).status_code, 403)
+        self.client.force_login(self.user)
+        self.assertEqual(self.client.get(owner_url).status_code, 403)
+        self.assertEqual(self.client.get(reverse('admin-live-state')).status_code, 403)
+        self.client.force_login(self.admin)
+        admin_url = reverse('admin-live-state')
+        admin = self.client.get(admin_url).json()
+        self.assertIn(booking.checkout_batch_id, admin['rows_html'])
+        self.assertFalse(self.client.get(admin_url, {'version': admin['version']}).json()['changed'])
+        response = self.client.post(reverse('owner_confirm_payment', args=[booking.pk]),
+                                    {'dashboard': 'admin'}, HTTP_ACCEPT='application/json')
+        self.assertEqual(response.status_code, 200)
+        new = self.client.get(admin_url, {'version': admin['version']}).json()
+        self.assertTrue(new['changed'])
+        self.assertEqual(response.json()['live_version'], new['version'])
+        self.assertEqual(Decimal(new['kpis']['gross']), Decimal('600.00'))
+        self.assertEqual(Decimal(new['kpis']['platform_fee']), Decimal('30.00'))
+        self.assertEqual(Decimal(new['kpis']['owner_payout']), Decimal('570.00'))
+        self.assertIn(self.facility.name, new['ledger_html'])
+        self.assertIn('today_html', new)
+        self.client.force_login(self.other_owner)
+        self.assertFalse(self.client.get(owner_url, {'version': other['version']}).json()['changed'])
+
+    def test_owner_ajax_reject_and_cancel_return_current_live_version(self):
+        for endpoint in ('owner_reject_receipt', 'owner_cancel_booking'):
+            with self.subTest(endpoint=endpoint):
+                self.client.force_authenticate(self.user)
+                booking = self.create_three_slot_checkout()[0]
+                self.client.force_login(self.owner)
+                response = self.client.post(
+                    reverse(endpoint, args=[booking.pk]), {'rejection_reason': 'Unreadable'},
+                    HTTP_ACCEPT='application/json',
+                )
+                self.assertEqual(response.status_code, 200)
+                version = response.json()['live_version']
+                self.assertFalse(self.client.get(reverse('owner-live-state'), {'version': version}).json()['changed'])
+
+    def test_admin_version_tracks_closure_time_transition(self):
+        from .live_sync import dashboard_version
+
+        start = timezone.localtime(self.start).replace(hour=12, minute=0, second=0, microsecond=0)
+        FacilityClosure.objects.create(
+            facility=self.facility, start_datetime=start, end_datetime=start + timedelta(hours=1),
+            reason='Maintenance',
+        )
+        with patch('bookings.live_sync.timezone.now', return_value=start - timedelta(minutes=1)):
+            before = dashboard_version(self.admin, admin=True)
+        with patch('bookings.live_sync.timezone.now', return_value=start + timedelta(minutes=1)):
+            during = dashboard_version(self.admin, admin=True)
+        self.assertNotEqual(before, during)
+
+    def test_customer_live_changes_and_other_users_are_isolated(self):
+        self.client.force_login(self.user)
+        url = reverse('customer-live-state')
+        before = self.client.get(url).json()
+        self.assertFalse(self.client.get(url, {'version': before['version']}).json()['changed'])
+        bookings = self.create_three_slot_checkout()
+        changed = self.client.get(url, {'version': before['version']}).json()
+        self.assertTrue(changed['changed'])
+        self.assertIn(bookings[0].checkout_batch_id, changed['rows_html'])
+        self.client.force_login(self.other)
+        other = self.client.get(url).json()
+        self.assertNotIn(bookings[0].checkout_batch_id, other['rows_html'])
+        self.client.force_login(self.owner)
+        self.client.post(reverse('owner_confirm_payment', args=[bookings[0].pk]))
+        self.client.force_login(self.other)
+        self.assertFalse(self.client.get(url, {'version': other['version']}).json()['changed'])
+        self.client.force_login(self.user)
+        confirmed = self.client.get(url, {'version': changed['version']}).json()
+        self.assertIn('Confirmed', confirmed['rows_html'])
+        self.assertEqual(confirmed['summary']['upcoming'], 1)
+        self.assertEqual(confirmed['latest_status_hint']['status'], Booking.Status.CONFIRMED)
+        self.client.force_login(self.owner)
+        self.client.post(reverse('owner_cancel_booking', args=[bookings[0].pk]))
+        self.client.force_login(self.user)
+        cancelled = self.client.get(url, {'version': confirmed['version']}).json()
+        self.assertTrue(cancelled['changed'])
+        self.assertIn('Cancelled', cancelled['rows_html'])
+        self.client.force_authenticate(self.user)
+        pending = self.create_three_slot_checkout()
+        pending_version = self.client.get(url).json()['version']
+        self.client.force_login(self.owner)
+        self.client.post(reverse('owner_reject_receipt', args=[pending[0].pk]), {'rejection_reason': 'Unreadable'})
+        self.client.force_login(self.user)
+        rejected = self.client.get(url, {'version': pending_version}).json()
+        self.assertTrue(rejected['changed'])
+        self.assertIn('Unreadable', rejected['rows_html'])
+
+    def test_public_availability_version_tracks_bookings_and_closures_without_private_data(self):
+        url = reverse('facility-availability-version', args=[self.facility.pk])
+        initial = self.client.get(url)
+        self.assertEqual(set(initial.json()), {'version'})
+        self.assertIn('no-store', initial.headers['Cache-Control'])
+        bookings = self.create_three_slot_checkout()
+        created = self.client.get(url).json()['version']
+        self.assertNotEqual(initial.json()['version'], created)
+        self.client.force_login(self.owner)
+        self.client.post(reverse('owner_confirm_payment', args=[bookings[0].pk]))
+        confirmed = self.client.get(url).json()['version']
+        self.assertNotEqual(created, confirmed)
+        self.client.post(reverse('owner_cancel_booking', args=[bookings[0].pk]))
+        cancelled = self.client.get(url).json()['version']
+        self.assertNotEqual(confirmed, cancelled)
+        self.client.force_authenticate(self.user)
+        pending = self.create_three_slot_checkout()
+        pending_version = self.client.get(url).json()['version']
+        self.client.force_login(self.owner)
+        self.client.post(reverse('owner_reject_receipt', args=[pending[0].pk]), {'rejection_reason': 'No'})
+        rejected = self.client.get(url).json()['version']
+        self.assertNotEqual(pending_version, rejected)
+        closure = FacilityClosure.objects.create(
+            facility=self.facility, start_datetime=self.start,
+            end_datetime=self.start + timedelta(hours=1), reason='Maintenance',
+        )
+        closed = self.client.get(url).json()['version']
+        self.assertNotEqual(rejected, closed)
+        owner_url = reverse('owner-live-state')
+        owner_version = self.client.get(owner_url).json()['version']
+        closure.delete()
+        self.assertEqual(self.client.get(url).json()['version'], rejected)
+        self.assertTrue(self.client.get(owner_url, {'version': owner_version}).json()['changed'])
+        self.assertNotIn('receipt', self.client.get(url).content.decode().lower())
 
     @override_settings(BREVO_API_KEY='test-key', BREVO_SENDER_EMAIL='sender@example.com',
                        BREVO_SENDER_NAME='CourtGrid')

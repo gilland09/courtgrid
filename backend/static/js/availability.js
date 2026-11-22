@@ -307,6 +307,66 @@ async function searchAvailability() {
     }
 }
 
+function manilaDate(value) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date(value));
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+}
+
+async function refreshLiveAvailability() {
+    if (!sportInput.value || !dateInput.value) return;
+    const sport = sportInput.value;
+    const displayedDate = dateInput.value;
+    const dates = new Set([displayedDate, ...slots.map((slot) => manilaDate(slot.startTime)),
+        ...pendingSwitchSlots.map((slot) => manilaDate(slot.startTime))]);
+    const schedules = new Map(await Promise.all(Array.from(dates, async (date) => {
+        const query = new URLSearchParams({ mode: 'parallel', facility: facility.dataset.facilityId, sport, date });
+        const response = await fetch(`/api/availability/search?${query}`, { credentials: 'same-origin' });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(errorText(payload));
+        const schedule = payload.slots || payload.results;
+        if (!Array.isArray(schedule)) throw new Error('Invalid availability response.');
+        return [date, schedule];
+    })));
+    if (submitting || document.hidden || sport !== sportInput.value) return;
+    const allSelected = [...slots, ...pendingSwitchSlots];
+    if (allSelected.some((slot) => !schedules.has(manilaDate(slot.startTime)))) {
+        throw new Error('Cart dates changed during the availability check.');
+    }
+    const available = new Set();
+    schedules.forEach((schedule) => schedule.forEach((item) => {
+        if (item.availability === 'available') available.add(normalizeSlot(item).key);
+    }));
+    const pageY = window.scrollY;
+    const modalCard = bookingModal.querySelector('.cg-modal-card');
+    const modalY = modalCard.scrollTop;
+    const oldCount = slots.length;
+    slots = slots.filter((slot) => available.has(slot.key));
+    pendingSwitchSlots = pendingSwitchSlots.filter((slot) => available.has(slot.key));
+    if (!pendingSwitchSlots.length) document.getElementById('court-switch-notice').hidden = true;
+    updateCart();
+    if (displayedDate === dateInput.value) {
+        searchSequence += 1;
+        const schedule = schedules.get(displayedDate);
+        if (schedule.length) renderAvailability(schedule);
+        else setMessage(results, 'No courts are available for this date. Try another day.');
+    }
+    modalCard.scrollTop = modalY;
+    window.scrollTo(window.scrollX, pageY);
+    if (slots.length < oldCount) {
+        window.CourtGridToast.show('A slot in your cart was just reserved by another player and has been removed.', 'warning');
+    }
+}
+
+window.CourtGridLive.start({
+    node: facility,
+    interval: 4000,
+    canUpdate: () => !document.hidden && !submitting,
+    apply: refreshLiveAvailability,
+});
+
 function errorText(value) {
     if (typeof value === 'string') return value;
     if (Array.isArray(value)) return value.map(errorText).join(' ');
