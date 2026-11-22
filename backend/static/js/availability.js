@@ -2,7 +2,9 @@ const facility = document.getElementById('facility-detail');
 const dateInput = document.getElementById('availability-date');
 const sportInput = document.getElementById('availability-sport');
 const results = document.getElementById('availability-results');
-const datePills = document.getElementById('quick-date-pills');
+const calendar = document.querySelector('.cg-calendar');
+const calendarDays = document.getElementById('calendar-days');
+const courtCards = document.getElementById('court-cards');
 const flow = document.getElementById('booking-flow');
 const organizerForm = document.getElementById('organizer-form');
 const cart = document.getElementById('booking-cart');
@@ -31,6 +33,9 @@ let submitting = false;
 let unknownOutcome = false;
 let receiptPreviewUrl = null;
 let previousSport = sportInput.value;
+let calendarState = helpers.clearCalendar(calendar.dataset.today);
+let calendarMonth = calendar.dataset.today.slice(0, 7);
+let selectedCourts = [];
 
 function openModal(modal) {
     modal.classList.add('is-open');
@@ -159,9 +164,12 @@ function updateCheckoutState() {
 }
 
 function updateCart() {
+    if (!slots.length && !pendingSwitchSlots.length) document.getElementById('court-switch-notice').hidden = true;
     renderSlotList(cart);
     renderSlotList(document.getElementById('booking-summary'));
     document.getElementById('cart-total').textContent = formatCurrency(total());
+    document.getElementById('cart-bar-total').textContent = formatCurrency(total());
+    document.getElementById('cart-bar-count').textContent = `${slots.length} slots · ${slots.length} hours`;
     document.getElementById('checkout-total').textContent = `Total due ${formatCurrency(total())}`;
     document.getElementById('checkout-bookings').textContent = `${slots.length} bookings`;
     document.getElementById('checkout-hours').textContent = `${slots.length} hours`;
@@ -205,34 +213,73 @@ function addSlots(items) {
     return { added, limited, unrated };
 }
 
-function renderDates() {
-    datePills.replaceChildren();
-    helpers.getSevenDayDates(dateInput.min).forEach((date, index) => {
+function renderCalendar() {
+    const first = new Date(`${calendarMonth}-01T00:00:00Z`);
+    const firstDay = first.getUTCDay();
+    const nextMonth = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 1));
+    const daysInMonth = (nextMonth - first) / 86400000;
+    document.getElementById('calendar-month').textContent = new Intl.DateTimeFormat('en-PH', {
+        month: 'long', year: 'numeric', timeZone: 'UTC',
+    }).format(first);
+    document.getElementById('calendar-prev').disabled = calendarMonth <= calendar.dataset.today.slice(0, 7);
+    document.getElementById('calendar-next').disabled = calendarMonth >= calendar.dataset.maxDate.slice(0, 7);
+    calendarDays.replaceChildren();
+    for (let index = 0; index < firstDay; index += 1) calendarDays.append(document.createElement('span'));
+    for (let day = 1; day <= daysInMonth; day += 1) {
+        const date = `${calendarMonth}-${String(day).padStart(2, '0')}`;
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = 'quick-date-pill';
         button.dataset.date = date;
-        const label = document.createElement('span');
-        label.className = 'quick-date-day';
-        label.textContent = index === 0 ? 'Today' : index === 1 ? 'Tomorrow' : formatDate(`${date}T12:00:00+08:00`);
-        button.append(label);
-        datePills.append(button);
-    });
-    updateDatePills();
+        button.textContent = String(day);
+        button.disabled = date < calendar.dataset.today || date > calendar.dataset.maxDate;
+        const selected = date >= calendarState.startDate && date <= (calendarState.endDate || calendarState.startDate);
+        button.classList.toggle('is-in-range', selected);
+        button.classList.toggle('is-endpoint', date === calendarState.startDate || date === calendarState.endDate);
+        button.setAttribute('aria-pressed', String(selected));
+        button.setAttribute('aria-label', formatDate(`${date}T12:00:00+08:00`));
+        calendarDays.append(button);
+    }
+    const count = helpers.rangeDates(calendarState.startDate, calendarState.endDate || calendarState.startDate).length;
+    const start = formatDate(`${calendarState.startDate}T12:00:00+08:00`);
+    const end = calendarState.endDate ? ` → ${formatDate(`${calendarState.endDate}T12:00:00+08:00`)}` : '';
+    document.getElementById('calendar-summary').textContent = `${start}${end} · ${count} day${count === 1 ? '' : 's'}`;
+    document.getElementById('range-form').hidden = !calendarState.endDate;
 }
 
-function updateDatePills() {
-    datePills.querySelectorAll('[data-date]').forEach((button) => {
-        const selected = button.dataset.date === dateInput.value;
-        button.classList.toggle('active', selected);
-        button.setAttribute('aria-pressed', String(selected));
+function renderCourts() {
+    const available = resources.filter((resource) => resource.sport_ids.includes(Number(sportInput.value)));
+    selectedCourts = selectedCourts.filter((id) => available.some((resource) => resource.id === id));
+    courtCards.replaceChildren();
+    available.forEach((resource) => {
+        const label = document.createElement('label');
+        label.className = 'cg-court-choice';
+        const input = document.createElement('input');
+        input.type = mode === 'player' ? 'radio' : 'checkbox';
+        input.name = 'selected-court';
+        input.value = resource.id;
+        input.checked = selectedCourts.includes(resource.id);
+        const details = document.createElement('span');
+        const name = document.createElement('strong');
+        name.textContent = resource.name;
+        const info = document.createElement('small');
+        const rate = rateFor({ resourceId: resource.id, sportId: Number(sportInput.value) });
+        info.textContent = `${sportInput.selectedOptions[0]?.textContent || 'Sport'} · ${rate === null ? 'Rate not listed' : `${formatCurrency(rate)}/hr`}`;
+        details.append(name, info);
+        label.append(input, details);
+        courtCards.append(label);
     });
+    if (!available.length) courtCards.textContent = 'No active courts for this sport.';
+    const all = document.getElementById('select-all-courts');
+    all.hidden = mode !== 'organizer' || !available.length;
+    all.textContent = selectedCourts.length === available.length ? 'Clear' : 'Select all';
+    document.getElementById('court-selection-note').textContent = mode === 'player'
+        ? 'Select one court per reservation.' : 'Select one or more courts.';
 }
 
 function renderAvailability(schedule) {
     slotButtons = new Map();
     const grouped = new Map();
-    schedule.forEach((item) => {
+    schedule.filter((item) => selectedCourts.includes(Number(item.resource_id))).forEach((item) => {
         if (!grouped.has(item.resource_id)) grouped.set(item.resource_id, []);
         grouped.get(item.resource_id).push(item);
     });
@@ -278,7 +325,13 @@ function renderAvailability(schedule) {
         column.append(card);
         grid.append(column);
     });
-    results.replaceChildren(grid);
+    if (grouped.size) {
+        results.className = '';
+        results.removeAttribute('role');
+        results.replaceChildren(grid);
+    } else {
+        setMessage(results, selectedCourts.length ? 'No slots are available for the selected courts on this date.' : 'Select a court to view its schedule.');
+    }
     updateSelectedButtons();
 }
 
@@ -345,7 +398,10 @@ async function refreshLiveAvailability() {
     const oldCount = slots.length;
     slots = slots.filter((slot) => available.has(slot.key));
     pendingSwitchSlots = pendingSwitchSlots.filter((slot) => available.has(slot.key));
-    if (!pendingSwitchSlots.length) document.getElementById('court-switch-notice').hidden = true;
+    if (!pendingSwitchSlots.length && !(mode === 'player' && slots.length
+        && selectedCourts.length && slots[0].resourceId !== selectedCourts[0])) {
+        document.getElementById('court-switch-notice').hidden = true;
+    }
     updateCart();
     if (displayedDate === dateInput.value) {
         searchSequence += 1;
@@ -382,14 +438,13 @@ async function addDateRange(event) {
     event.preventDefault();
     const rangeForm = event.currentTarget;
     const message = document.getElementById('range-result');
-    const startDate = document.getElementById('range-start').value;
-    const endDate = document.getElementById('range-end').value;
+    const startDate = calendarState.startDate;
+    const endDate = calendarState.endDate;
     const startTime = document.getElementById('range-start-time').value;
     const endTime = document.getElementById('range-end-time').value;
-    const courtIds = Array.from(document.getElementById('range-courts').selectedOptions, (item) => Number(item.value));
-    const days = (Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86400000 + 1;
-    if (!Number.isInteger(days) || days < 1 || days > 14) {
-        setMessage(message, 'Choose a date range of at most 14 days.');
+    const courtIds = [...selectedCourts];
+    if (!endDate || helpers.rangeDates(startDate, endDate).length > Number(calendar.dataset.rangeDays)) {
+        setMessage(message, `Choose a date range of at most ${calendar.dataset.rangeDays} days.`);
         return;
     }
     if (!courtIds.length || (mode === 'player' && courtIds.length !== 1)) {
@@ -415,7 +470,10 @@ async function addDateRange(event) {
         });
         const payload = await response.json();
         if (!response.ok) throw new Error(errorText(payload));
-        if (sport !== sportInput.value) throw new Error('Sport changed while searching. Please try again.');
+        if (sport !== sportInput.value || startDate !== calendarState.startDate || endDate !== calendarState.endDate
+            || courtIds.join(',') !== selectedCourts.join(',')) {
+            throw new Error('Selection changed while searching. Please try again.');
+        }
         if (!Array.isArray(payload.available_slots) || !Array.isArray(payload.skipped_slots)) {
             throw new Error('Invalid availability response.');
         }
@@ -590,14 +648,48 @@ organizerForm.addEventListener('submit', (event) => {
     document.getElementById(id).addEventListener('input', (event) => event.target.setCustomValidity(''));
 });
 document.getElementById('range-form').addEventListener('submit', addDateRange);
-datePills.addEventListener('click', (event) => {
+calendarDays.addEventListener('click', (event) => {
     const button = event.target.closest('[data-date]');
     if (!button) return;
+    calendarState = helpers.selectCalendarDate(calendarState, button.dataset.date, Number(calendar.dataset.rangeDays));
     dateInput.value = button.dataset.date;
-    updateDatePills();
+    document.getElementById('calendar-hint').textContent = calendarState.exceeded
+        ? `Date ranges can be up to ${calendar.dataset.rangeDays} days. Starting a new selection on ${formatDate(`${button.dataset.date}T12:00:00+08:00`)}.`
+        : '';
+    renderCalendar();
     searchAvailability();
 });
-dateInput.addEventListener('change', () => { updateDatePills(); searchAvailability(); });
+document.getElementById('calendar-clear').addEventListener('click', () => {
+    calendarState = helpers.clearCalendar(calendar.dataset.today);
+    dateInput.value = calendar.dataset.today;
+    calendarMonth = calendar.dataset.today.slice(0, 7);
+    document.getElementById('calendar-hint').textContent = '';
+    renderCalendar();
+    searchAvailability();
+});
+['prev', 'next'].forEach((direction) => {
+    document.getElementById(`calendar-${direction}`).addEventListener('click', () => {
+        const [year, month] = calendarMonth.split('-').map(Number);
+        calendarMonth = new Date(Date.UTC(year, month - 1 + (direction === 'next' ? 1 : -1), 1)).toISOString().slice(0, 7);
+        renderCalendar();
+    });
+});
+courtCards.addEventListener('change', (event) => {
+    const input = event.target;
+    if (!input.matches('input[name="selected-court"]')) return;
+    selectedCourts = helpers.selectCourt(selectedCourts, Number(input.value), input.checked, mode);
+    pendingSwitchSlots = [];
+    document.getElementById('court-switch-notice').hidden = !(mode === 'player' && slots.length
+        && selectedCourts.length && slots[0].resourceId !== selectedCourts[0]);
+    renderCourts();
+    searchAvailability();
+});
+document.getElementById('select-all-courts').addEventListener('click', () => {
+    const available = resources.filter((resource) => resource.sport_ids.includes(Number(sportInput.value)));
+    selectedCourts = selectedCourts.length === available.length ? [] : available.map((resource) => resource.id);
+    renderCourts();
+    searchAvailability();
+});
 sportInput.addEventListener('change', () => {
     if (slots.length && !window.confirm('Changing sports clears your booking cart. Continue?')) {
         sportInput.value = previousSport;
@@ -605,9 +697,11 @@ sportInput.addEventListener('change', () => {
     }
     previousSport = sportInput.value;
     slots = [];
+    selectedCourts = [];
     pendingSwitchSlots = [];
     document.getElementById('court-switch-notice').hidden = true;
     updateCart();
+    renderCourts();
     searchAvailability();
 });
 document.getElementById('replace-court').addEventListener('click', () => {
@@ -615,7 +709,8 @@ document.getElementById('replace-court').addEventListener('click', () => {
     const replacement = pendingSwitchSlots;
     pendingSwitchSlots = [];
     document.getElementById('court-switch-notice').hidden = true;
-    addSlots(replacement);
+    if (replacement.length) addSlots(replacement);
+    else updateCart();
 });
 document.addEventListener('click', (event) => {
     const button = event.target.closest('[data-remove-slot]');
@@ -646,6 +741,9 @@ const receiptDropzone = receiptInput.closest('.cg-receipt-dropzone');
 });
 policyInput.addEventListener('change', updateCheckoutState);
 
-renderDates();
+const firstCourt = resources.find((resource) => resource.sport_ids.includes(Number(sportInput.value)));
+if (firstCourt) selectedCourts = [firstCourt.id];
+renderCalendar();
+renderCourts();
 updateCart();
 if (mode === 'player' || mode === 'organizer') searchAvailability();

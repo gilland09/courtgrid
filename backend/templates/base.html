@@ -111,6 +111,12 @@
     {% block extra_js %}{% endblock %}
     <script>
         document.addEventListener('DOMContentLoaded', () => {
+            const navToggle = document.querySelector('[data-nav-toggle]');
+            const navMenu = document.getElementById('mainNavigation');
+            navToggle.addEventListener('click', () => {
+                const open = navMenu.classList.toggle('show');
+                navToggle.setAttribute('aria-expanded', String(open));
+            });
             const closeModal = (overlay) => {
                 if (overlay.dataset.modalBusy === 'true') return;
                 overlay.querySelectorAll('[data-receipt-image], [data-receipt-frame]').forEach((preview) => preview.removeAttribute('src'));

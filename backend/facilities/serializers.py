@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from .availability import AVAILABILITY_RANGE_DAYS
 from .models import BookableResource, Facility, FacilityPaymentMethod, FacilitySport, Sport
 
 
@@ -60,8 +61,8 @@ class AvailabilityRangeSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         days = (attrs['end_date'] - attrs['start_date']).days
-        if days < 0 or days >= 14:
-            raise serializers.ValidationError({'end_date': 'Choose a range of at most 14 days.'})
+        if days < 0 or days >= AVAILABILITY_RANGE_DAYS:
+            raise serializers.ValidationError({'end_date': f'Choose a range of at most {AVAILABILITY_RANGE_DAYS} days.'})
         if attrs['booking_type'] == 'player' and len(set(attrs['court_ids'])) != 1:
             raise serializers.ValidationError({'court_ids': 'Players can select only one court.'})
         if ('start_time' in attrs) != ('end_time' in attrs):

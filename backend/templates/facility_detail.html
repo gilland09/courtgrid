@@ -96,17 +96,37 @@
         {% if not payment_methods %}
             <div class="alert alert-warning">This venue has not arranged a payment method yet. Contact the venue for payment details.</div>
         {% endif %}
-        <section class="when-card mt-4 mb-4" aria-labelledby="when-heading">
+        <section class="when-card cg-calendar mt-4 mb-4" aria-labelledby="when-heading" data-today="{{ today }}" data-max-date="{{ availability_max_date }}" data-range-days="{{ availability_range_days }}">
             <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
-                <div><p class="text-uppercase small fw-semibold text-body-secondary mb-1">Plan your game</p><h2 id="when-heading" class="h4 mb-0">When</h2></div>
+                <div><h2 id="when-heading" class="h5 mb-1">SELECT DATE OR DATE RANGE</h2><p class="small text-body-secondary mb-0">Next {{ availability_future_days }} days · up to {{ availability_range_days }} days per range</p></div>
                 <div class="d-flex align-items-center gap-2">
                     <label for="availability-sport" class="form-label mb-0">Sport</label>
                     <select id="availability-sport" class="form-select">{% for facility_sport in facility_sports %}<option value="{{ facility_sport.sport_id }}">{{ facility_sport.sport.name }}</option>{% endfor %}</select>
                 </div>
             </div>
-            <div id="quick-date-pills" class="quick-date-pills" role="group" aria-label="Choose a date"></div>
-            <label for="availability-date" class="form-label mt-3">Choose another date</label>
-            <input id="availability-date" type="date" class="form-control" value="{{ today }}" min="{{ today }}">
+            <div class="cg-calendar-navigation">
+                <button type="button" id="calendar-prev" aria-label="Previous month">←</button>
+                <strong id="calendar-month" aria-live="polite"></strong>
+                <button type="button" id="calendar-next" aria-label="Next month">→</button>
+            </div>
+            <div class="cg-calendar-grid cg-calendar-weekdays" aria-hidden="true"><span>SU</span><span>MO</span><span>TU</span><span>WE</span><span>TH</span><span>FR</span><span>SA</span></div>
+            <div id="calendar-days" class="cg-calendar-grid" role="group" aria-label="Choose a date or date range"></div>
+            <div class="cg-calendar-summary"><span id="calendar-summary" aria-live="polite"></span><button type="button" id="calendar-clear">Clear</button></div>
+            <p id="calendar-hint" class="small text-body-secondary mb-0" role="status"></p>
+            <input id="availability-date" type="hidden" value="{{ today }}">
+        </section>
+
+        <section class="cg-flow-card mb-4" aria-labelledby="select-courts-heading">
+            <div class="d-flex justify-content-between align-items-center gap-2">
+                <h2 id="select-courts-heading" class="h5 mb-0">SELECT COURTS</h2>
+                <button id="select-all-courts" class="btn btn-outline-primary btn-sm" type="button" hidden>Select all</button>
+            </div>
+            <p id="court-selection-note" class="small text-body-secondary mt-2"></p>
+            <div id="court-cards" class="cg-court-cards">
+                {% for court in facility_courts %}
+                <label class="cg-court-choice"><input type="{% if request.GET.mode == 'player' %}radio{% else %}checkbox{% endif %}" name="selected-court" value="{{ court.resource.pk }}"><span><strong>{{ court.resource.name }}</strong><small>{{ court.sports|join:", " }}{% if court.has_rate %} · ₱{{ court.hourly_rate|floatformat:2 }}/hr{% endif %}</small></span></label>
+                {% empty %}<span>No active courts are listed.</span>{% endfor %}
+            </div>
         </section>
 
         <section class="operating-hours-card mb-4" aria-labelledby="operating-hours-heading">
@@ -117,20 +137,6 @@
             </div>
         </section>
 
-        <form id="range-form" class="cg-flow-card mb-4">
-            <h2 class="h5">Date-range quick-add</h2>
-            <p class="small text-body-secondary">Check up to 14 days at once. Choose a time window and one or more courts.</p>
-            <div class="row g-3">
-                <div class="col-sm-6 col-lg-3"><label class="form-label" for="range-start">Start date</label><input id="range-start" type="date" class="form-control" value="{{ today }}" min="{{ today }}" required></div>
-                <div class="col-sm-6 col-lg-3"><label class="form-label" for="range-end">End date</label><input id="range-end" type="date" class="form-control" value="{{ today }}" min="{{ today }}" required></div>
-                <div class="col-sm-6 col-lg-3"><label class="form-label" for="range-start-time">From</label><input id="range-start-time" type="time" class="form-control" value="08:00" step="3600" required></div>
-                <div class="col-sm-6 col-lg-3"><label class="form-label" for="range-end-time">Until</label><input id="range-end-time" type="time" class="form-control" value="18:00" step="3600" required></div>
-                <div class="col-12"><label class="form-label" for="range-courts">Courts</label><select id="range-courts" class="form-select" multiple required>{% for court in facility_courts %}<option value="{{ court.resource.pk }}">{{ court.resource.name }}</option>{% endfor %}</select><div class="form-text">Use Ctrl or Command to select multiple courts for a club booking.</div></div>
-            </div>
-            <button type="submit" class="btn btn-outline-primary mt-3">Check &amp; add available slots</button>
-            <div id="range-result" class="mt-2" role="status" aria-live="polite"></div>
-        </form>
-
         <section aria-labelledby="availability-heading">
             <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-3">
                 <div><p class="text-uppercase small fw-semibold text-body-secondary mb-1">Live availability</p><h2 id="availability-heading" class="h4 mb-0">Court schedule <span class="cg-live-badge">Live</span></h2></div>
@@ -139,6 +145,15 @@
             <div id="court-switch-notice" class="alert alert-warning" hidden>
                 Players can select only one court. <button id="replace-court" type="button" class="btn btn-sm btn-outline-primary">Switch courts and replace cart</button> or <a href="?mode=organizer">switch to Club / Organizer</a>.
             </div>
+            <form id="range-form" class="cg-flow-card mb-3" hidden>
+                <h3 class="h6">Range time selection</h3>
+                <div class="row g-2 align-items-end">
+                    <div class="col-6 col-md-3"><label class="form-label" for="range-start-time">From</label><input id="range-start-time" type="time" class="form-control" value="08:00" step="3600" required></div>
+                    <div class="col-6 col-md-3"><label class="form-label" for="range-end-time">Until</label><input id="range-end-time" type="time" class="form-control" value="18:00" step="3600" required></div>
+                    <div class="col-12 col-md-auto"><button type="submit" class="btn btn-outline-primary">Check &amp; add available slots</button></div>
+                </div>
+            </form>
+            <div id="range-result" class="mt-2" role="status" aria-live="polite"></div>
             <div id="availability-results" aria-live="polite"><p class="text-body-secondary">Choose a date to view available courts.</p></div>
         </section>
 
@@ -146,8 +161,11 @@
             <div class="d-flex justify-content-between gap-2"><h2 id="cart-heading" class="h5">Booking Cart</h2><strong id="cart-total">₱0.00</strong></div>
             <div id="booking-cart" aria-live="polite"></div>
             {% if not user.is_authenticated %}<p class="small"><a href="{% url 'login' %}">Sign in</a> to submit a booking.</p>{% endif %}
-            <button id="continue-booking" type="button" class="btn btn-primary mt-3" disabled>Proceed to Review &amp; Pay</button>
         </section>
+        <div class="cg-cart-bar">
+            <div><strong id="cart-bar-total">₱0.00</strong><span id="cart-bar-count">0 slots · 0 hours</span></div>
+            <button id="continue-booking" type="button" class="btn btn-primary" disabled>Review &amp; pay →</button>
+        </div>
     </div>
     <form id="booking-csrf-form" class="d-none">{% csrf_token %}</form>
 </section>

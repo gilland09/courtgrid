@@ -6,28 +6,45 @@ require('./availability_helpers.js');
 const {
     calculateSlotTotal,
     calculateFeeBreakdown,
-    getSevenDayDates,
     getSlotKey,
     formatSlotTime,
     getAvailablePaymentMethods,
     isValidEmail,
     isValidPhone,
     resizePlayerNames,
+    selectCalendarDate,
+    clearCalendar,
+    rangeDates,
+    selectCourt,
 } = globalThis.CourtGridAvailabilityHelpers;
 
-test('seven date pills stay anchored to the initial Manila date', () => {
-    assert.deepEqual(
-        getSevenDayDates('2026-11-18'),
-        [
-            '2026-11-18',
-            '2026-11-19',
-            '2026-11-20',
-            '2026-11-21',
-            '2026-11-22',
-            '2026-11-23',
-            '2026-11-24',
-        ],
-    );
+test('calendar selects and orders inclusive ranges in either direction', () => {
+    const single = clearCalendar('2026-11-23');
+    assert.deepEqual(rangeDates(single.startDate), ['2026-11-23']);
+    for (const [first, second] of [['2026-11-23', '2026-11-26'], ['2026-11-26', '2026-11-23']]) {
+        const range = selectCalendarDate(clearCalendar(first), second, 14);
+        assert.deepEqual([range.startDate, range.endDate], ['2026-11-23', '2026-11-26']);
+        assert.deepEqual(rangeDates(range.startDate, range.endDate), ['2026-11-23', '2026-11-24', '2026-11-25', '2026-11-26']);
+    }
+});
+
+test('calendar resets active ranges, same-day selections, and oversized ranges', () => {
+    const range = selectCalendarDate(clearCalendar('2026-11-23'), '2026-11-26', 14);
+    for (const date of ['2026-11-23', '2026-11-24', '2026-11-26', '2026-11-27']) {
+        assert.deepEqual(selectCalendarDate(range, date, 14), clearCalendar(date));
+    }
+    assert.deepEqual(selectCalendarDate(clearCalendar('2026-11-23'), '2026-11-23', 14), clearCalendar('2026-11-23'));
+    assert.deepEqual(selectCalendarDate(clearCalendar('2026-11-23'), '2026-12-06', 14),
+        { startDate: '2026-11-23', endDate: '2026-12-06', exceeded: false });
+    assert.deepEqual(selectCalendarDate(clearCalendar('2026-11-23'), '2026-12-07', 14),
+        { startDate: '2026-12-07', endDate: null, exceeded: true });
+    assert.deepEqual(clearCalendar('2026-11-22'), { startDate: '2026-11-22', endDate: null, exceeded: false });
+});
+
+test('court selection enforces player single-court and organizer multi-court behavior', () => {
+    assert.deepEqual(selectCourt([1], 2, true, 'player'), [2]);
+    assert.deepEqual(selectCourt([1], 2, true, 'organizer'), [1, 2]);
+    assert.deepEqual(selectCourt([1, 2], 1, false, 'organizer'), [2]);
 });
 
 test('slot identity includes both the resource and start time', () => {

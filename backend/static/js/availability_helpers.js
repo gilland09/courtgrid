@@ -1,12 +1,33 @@
 (function attachAvailabilityHelpers(global) {
-    function getSevenDayDates(baseDate) {
-        const [year, month, day] = baseDate.split('-').map(Number);
-        const firstDate = new Date(Date.UTC(year, month - 1, day));
-        return Array.from({ length: 7 }, (_, offset) => {
-            const date = new Date(firstDate);
-            date.setUTCDate(firstDate.getUTCDate() + offset);
-            return date.toISOString().slice(0, 10);
-        });
+    function addDays(date, days) {
+        const value = new Date(`${date}T00:00:00Z`);
+        value.setUTCDate(value.getUTCDate() + days);
+        return value.toISOString().slice(0, 10);
+    }
+
+    function rangeDates(start, end = start) {
+        const count = (Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86400000 + 1;
+        return Array.from({ length: count }, (_, index) => addDays(start, index));
+    }
+
+    function selectCalendarDate(state, date, maxDays) {
+        if (!state.startDate || state.endDate || state.startDate === date) {
+            return { startDate: date, endDate: null, exceeded: false };
+        }
+        const [startDate, endDate] = [state.startDate, date].sort();
+        if (rangeDates(startDate, endDate).length > maxDays) {
+            return { startDate: date, endDate: null, exceeded: true };
+        }
+        return { startDate, endDate, exceeded: false };
+    }
+
+    function clearCalendar(today) {
+        return { startDate: today, endDate: null, exceeded: false };
+    }
+
+    function selectCourt(selected, id, checked, mode) {
+        if (mode === 'player') return checked ? [id] : [];
+        return checked ? [...new Set([...selected, id])] : selected.filter((item) => item !== id);
     }
 
     function getSlotKey(resourceId, startTime) {
@@ -73,7 +94,11 @@
     }
 
     global.CourtGridAvailabilityHelpers = {
-        getSevenDayDates,
+        addDays,
+        rangeDates,
+        selectCalendarDate,
+        clearCalendar,
+        selectCourt,
         getSlotKey,
         getAvailablePaymentMethods,
         formatSlotTime,

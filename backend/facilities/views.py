@@ -14,6 +14,9 @@ from rest_framework.views import APIView
 
 from .availability import (
     APPLICATION_TIMEZONE,
+    AVAILABILITY_FUTURE_DAYS,
+    AVAILABILITY_PAST_DAYS,
+    AVAILABILITY_RANGE_DAYS,
     active_resource_offerings,
     evaluate_serial_availability,
     evaluate_serial_slots,
@@ -206,6 +209,7 @@ def facility_detail_view(request, pk):
                 if resource.hourly_rate is not None
                 else None
             ),
+            'sport_ids': [item.sport_id for item in resource.sports.all() if item.is_active and item.sport.is_active],
         }
         for resource in active_resources
     ]
@@ -260,6 +264,9 @@ def facility_detail_view(request, pk):
         'facility_sports': facility.active_facility_sports,
         'operating_hours': facility.ordered_operating_hours,
         'today': timezone.localdate().isoformat(),
+        'availability_max_date': (timezone.localdate() + timedelta(days=AVAILABILITY_FUTURE_DAYS)).isoformat(),
+        'availability_future_days': AVAILABILITY_FUTURE_DAYS,
+        'availability_range_days': AVAILABILITY_RANGE_DAYS,
         'facility_resources': facility_resources,
         'facility_courts': facility_courts,
         'facility_photos': facility.ordered_photos,
@@ -281,8 +288,9 @@ class AvailabilitySearchView(APIView):
         serializer = AvailabilitySearchSerializer(data=params)
         serializer.is_valid(raise_exception=True)
         search_date = serializer.validated_data['date']
-        if abs((search_date - timezone.localdate()).days) > 31:
-            raise ValidationError({'date': 'Availability can only be searched within 31 days.'})
+        offset = (search_date - timezone.localdate()).days
+        if offset < -AVAILABILITY_PAST_DAYS or offset > AVAILABILITY_FUTURE_DAYS:
+            raise ValidationError({'date': f'Availability can only be searched from {AVAILABILITY_PAST_DAYS} days ago to {AVAILABILITY_FUTURE_DAYS} days ahead.'})
         facility_id = serializer.validated_data.get('facility')
         sport_filter = None
 

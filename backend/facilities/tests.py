@@ -60,7 +60,7 @@ class FacilityDetailPageTests(APITestCase):
         self.assertContains(response, '5:00 PM')
         self.assertContains(response, 'id="availability-date"')
         self.assertContains(response, 'id="availability-sport"')
-        self.assertContains(response, 'id="quick-date-pills"')
+        self.assertContains(response, 'id="calendar-days"')
         self.assertContains(response, 'id="availability-results"')
         self.assertContains(response, 'name="contact_email"')
         self.assertContains(response, 'name="contact_phone"')

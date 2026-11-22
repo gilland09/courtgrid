@@ -15,6 +15,9 @@ from .models import (
 
 
 APPLICATION_TIMEZONE = ZoneInfo(settings.TIME_ZONE)
+AVAILABILITY_FUTURE_DAYS = 60
+AVAILABILITY_PAST_DAYS = 31
+AVAILABILITY_RANGE_DAYS = 14
 
 
 def local_datetime(value):

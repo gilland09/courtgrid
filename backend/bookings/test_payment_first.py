@@ -257,12 +257,15 @@ class PaymentFirstTests(TestCase):
             )
             for content in (
                 'Tonio&#x27;s Dink District', 'organization-name', 'event-name',
-                'expected-participants', 'range-start', 'range-end', 'range-courts',
+                'expected-participants', 'SELECT DATE OR DATE RANGE', 'calendar-days', 'court-cards',
+                'name="selected-court"', 'range-start-time', 'range-end-time',
                 "Choose How You'll Pay", 'GCash', 'payment-receipt',
                 'policy-accepted', 'id="confirm-booking"', 'disabled',
                 'data-live-sync-url=', 'data-live-sync-version=',
             ):
                 self.assertContains(detail, content)
+            self.assertNotContains(detail, 'Use Ctrl or Command')
+            self.assertContains(detail, 'data-nav-toggle')
             html = detail.content.decode()
             self.assertLess(html.index('id="booking-modal"'), html.index('js/availability.js'))
             assert_rendered_scripts_parse(self, html)
@@ -276,7 +279,23 @@ class PaymentFirstTests(TestCase):
             self.assertEqual(page.status_code, 200)
             self.assertContains(page, 'data-live-sync-url=')
             self.assertContains(page, 'data-live-sync-version=')
+            self.assertContains(page, 'data-nav-toggle')
             assert_rendered_scripts_parse(self, page.content.decode())
+        self.client.force_login(self.admin)
+        for route in ('management_facilities', 'management_closures'):
+            page = self.client.get(reverse(route))
+            self.assertEqual(page.status_code, 200)
+            self.assertContains(page, 'data-nav-toggle')
+            assert_rendered_scripts_parse(self, page.content.decode())
+
+    def test_availability_search_forward_date_limit(self):
+        for days, status in ((31, 200), (60, 200), (61, 400), (-31, 200), (-32, 400)):
+            with self.subTest(days=days):
+                response = self.client.get('/api/availability/search', {
+                    'date': (timezone.localdate() + timedelta(days=days)).isoformat(),
+                    'facility': self.facility.pk, 'sport': self.sport.pk, 'mode': 'serial',
+                })
+                self.assertEqual(response.status_code, status)
 
     def test_receipt_permissions_and_no_public_media_url(self):
         response = self.submit()
