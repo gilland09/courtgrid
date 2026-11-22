@@ -173,6 +173,141 @@ h3,
     padding: 1.2rem;
 }
 
+.facility-card-photo {
+    height: 11rem;
+    overflow: hidden;
+    background: #eaf4ed;
+}
+
+.facility-card-photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.facility-card-photo-placeholder {
+    display: grid;
+    width: 100%;
+    height: 100%;
+    place-items: center;
+    color: var(--brand-green);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    background: linear-gradient(135deg, #eaf4ed, #d5e9d9);
+}
+
+.venue-detail-badge {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    border: 1px solid #d5e3d8;
+    border-radius: 999px;
+    padding: 0.25rem 0.6rem;
+    color: #355b40;
+    background: #f5faf6;
+    font-size: 0.75rem;
+    line-height: 1.25;
+}
+
+.venue-gallery-cover {
+    position: relative;
+    display: block;
+    height: clamp(14rem, 38vw, 28rem);
+    overflow: hidden;
+    border-radius: 0.9rem;
+    background: #eaf4ed;
+}
+
+.venue-gallery-cover img,
+.venue-gallery-thumbnails img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.venue-gallery-cover-label {
+    position: absolute;
+    right: 0.75rem;
+    bottom: 0.75rem;
+    border-radius: 999px;
+    padding: 0.3rem 0.7rem;
+    color: #fff;
+    background: rgba(15, 23, 42, 0.72);
+    font-size: 0.8rem;
+}
+
+.venue-gallery-thumbnails {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(5rem, 1fr));
+    gap: 0.5rem;
+}
+
+.venue-gallery-thumbnails a {
+    height: 5rem;
+    overflow: hidden;
+    border-radius: 0.5rem;
+}
+
+.facility-court-list {
+    display: grid;
+    gap: 0.6rem;
+}
+
+.facility-court-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    border-top: 1px solid #e2e8e4;
+    padding-top: 0.65rem;
+}
+
+.facility-amenity-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.facility-amenity-list li {
+    border-radius: 999px;
+    padding: 0.35rem 0.7rem;
+    background: #eaf4ed;
+    color: var(--brand-green);
+    font-size: 0.85rem;
+}
+
+.owner-photo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+    gap: 0.8rem;
+}
+
+.owner-photo-card {
+    overflow: hidden;
+    border: 1px solid #dbe3dc;
+    border-radius: 0.75rem;
+    background: #fff;
+}
+
+.owner-photo-card > img {
+    display: block;
+    width: 100%;
+    height: 9rem;
+    object-fit: cover;
+}
+
+.amenity-checkbox-grid ul {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    gap: 0.4rem 1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
 .facility-eyebrow {
     color: var(--slate-gray);
     font-size: 0.72rem;

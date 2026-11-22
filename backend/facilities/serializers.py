@@ -38,6 +38,8 @@ class FacilitySerializer(serializers.ModelSerializer):
     longitude = serializers.SerializerMethodField()
     supported_sports = serializers.SerializerMethodField()
     matching_sports = serializers.SerializerMethodField()
+    court_count = serializers.SerializerMethodField()
+    cover_photo_url = serializers.SerializerMethodField()
     resources = BookableResourceSerializer(many=True, read_only=True, source='active_resources')
 
     class Meta:
@@ -56,6 +58,9 @@ class FacilitySerializer(serializers.ModelSerializer):
             'verification_status',
             'supported_sports',
             'matching_sports',
+            'amenities',
+            'court_count',
+            'cover_photo_url',
             'resources',
         )
 
@@ -114,3 +119,17 @@ class FacilitySerializer(serializers.ModelSerializer):
             ],
             many=True,
         ).data
+
+    def get_court_count(self, obj):
+        resources = getattr(obj, 'active_resources', None)
+        if resources is not None:
+            return len(resources)
+        return obj.resources.filter(is_active=True).count()
+
+    def get_cover_photo_url(self, obj):
+        photos = getattr(obj, 'ordered_photos', None)
+        if photos is None:
+            photos = list(obj.photos.all())
+        cover = next((photo for photo in photos if photo.is_cover), None)
+        photo = cover or (photos[0] if photos else None)
+        return photo.image.url if photo else None

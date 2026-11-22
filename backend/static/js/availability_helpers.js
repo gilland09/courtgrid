@@ -35,9 +35,17 @@
         }).format(new Date(value));
     }
 
-    function calculateSlotTotal(slots, rates) {
+    function calculateSlotTotal(slots, rates, resources = []) {
         return slots.reduce(
-            (total, slot) => total + Number(rates[String(slot.sportId)] || 0),
+            (total, slot) => {
+                const resourceId = Number(slot.resourceId ?? slot.resource_id);
+                const resource = resources.find((item) => item.id === resourceId);
+                const resourceRate = resource?.hourly_rate;
+                const rate = resourceRate !== null && resourceRate !== undefined
+                    ? resourceRate
+                    : rates[String(slot.sportId ?? slot.sport_id)];
+                return total + Number(rate || 0);
+            },
             0,
         );
     }

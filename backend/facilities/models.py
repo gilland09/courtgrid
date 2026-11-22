@@ -1,7 +1,23 @@
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
-from django.db import models
+from django.db import models, transaction
 from django.db.models import F, Q
+
+
+STANDARD_AMENITIES = (
+    'Covered Roof',
+    'Floodlights',
+    'Free Parking',
+    'Restrooms',
+    'Drinking Water',
+    'Bleachers / Seating',
+    'Equipment Rental',
+    'Locker / Changing Area',
+    'Wi-Fi',
+    'Air-Conditioned',
+    'Canteen / Refreshments',
+    'First Aid Kit',
+)
 
 
 class Sport(models.Model):
@@ -79,6 +95,7 @@ class Facility(models.Model):
         blank=True,
         validators=[MinValueValidator(0)],
     )
+    amenities = models.JSONField(default=list, blank=True)
     is_active = models.BooleanField(default=True)
     is_demo_data = models.BooleanField(default=True)
     is_verified = models.BooleanField(default=False)
@@ -100,6 +117,18 @@ class Facility(models.Model):
 
     def __str__(self):
         return self.name
+
+    def ensure_default_court(self):
+        existing_court = self.resources.order_by('display_order', 'pk').first()
+        if existing_court is not None:
+            return existing_court
+        return self.resources.get_or_create(
+            name='Court 1',
+            defaults={
+                'resource_type': 'Court',
+                'capacity': self.capacity,
+            },
+        )[0]
 
     @property
     def available_payment_methods(self):
@@ -158,6 +187,14 @@ class BookableResource(models.Model):
     name = models.CharField(max_length=150)
     resource_type = models.CharField(max_length=50, blank=True)
     capacity = models.PositiveIntegerField(null=True, blank=True)
+    hourly_rate = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+    )
+    display_order = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
     sports = models.ManyToManyField(
         FacilitySport,
@@ -177,6 +214,79 @@ class BookableResource(models.Model):
 
     def __str__(self):
         return f'{self.facility} - {self.name}'
+
+    @property
+    def effective_hourly_rate(self):
+        if self.hourly_rate is not None:
+            return self.hourly_rate
+        return self.facility.default_hourly_rate
+
+    def effective_hourly_rate_for(self, facility_sport):
+        if self.hourly_rate is not None:
+            return self.hourly_rate
+        if facility_sport.hourly_rate is not None:
+            return facility_sport.hourly_rate
+        return self.facility.default_hourly_rate
+
+
+class FacilityPhoto(models.Model):
+    class Category(models.TextChoices):
+        COURT = 'court', 'Court'
+        AMENITY = 'amenity', 'Amenity'
+        EXTERIOR = 'exterior', 'Venue / Exterior'
+
+    facility = models.ForeignKey(
+        Facility,
+        on_delete=models.CASCADE,
+        related_name='photos',
+    )
+    image = models.FileField(upload_to='facility_photos/')
+    caption = models.CharField(max_length=140, blank=True)
+    category = models.CharField(
+        max_length=32,
+        choices=Category.choices,
+        default=Category.COURT,
+    )
+    is_cover = models.BooleanField(default=False)
+    display_order = models.PositiveIntegerField(default=0)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('display_order', 'pk')
+        constraints = [
+            models.UniqueConstraint(
+                fields=('facility',),
+                condition=Q(is_cover=True),
+                name='unique_facility_cover_photo',
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        with transaction.atomic():
+            Facility.objects.select_for_update().get(pk=self.facility_id)
+            if not self.pk and not self.is_cover:
+                self.is_cover = not type(self).objects.filter(
+                    facility_id=self.facility_id,
+                ).exists()
+            if self.is_cover:
+                type(self).objects.filter(
+                    facility_id=self.facility_id,
+                ).exclude(pk=self.pk).update(is_cover=False)
+            super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        with transaction.atomic():
+            Facility.objects.select_for_update().get(pk=self.facility_id)
+            was_cover = self.is_cover
+            result = super().delete(*args, **kwargs)
+            if was_cover:
+                next_photo = type(self).objects.filter(
+                    facility_id=self.facility_id,
+                ).order_by('display_order', 'pk').first()
+                if next_photo is not None:
+                    next_photo.is_cover = True
+                    next_photo.save(update_fields=('is_cover',))
+            return result
 
 
 class ResourceSport(models.Model):

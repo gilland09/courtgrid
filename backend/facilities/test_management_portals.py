@@ -1,21 +1,26 @@
+import base64
 from datetime import time, timedelta
 from decimal import Decimal
+import importlib
 from pathlib import Path
 import re
 import shutil
 import struct
 import subprocess
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 import zlib
 
+from django.apps import apps
 from django.contrib.admin.models import CHANGE, LogEntry
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection
 from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 
 from bookings.models import Booking, UserProfile
 
@@ -23,21 +28,39 @@ from .models import (
     BookableResource,
     Facility,
     FacilityClosure,
+    FacilityPhoto,
     FacilitySport,
     ResourceSport,
     Sport,
 )
+from .portal_forms import FacilityPhotoForm
 
 
 def assert_rendered_scripts_parse(test_case, rendered_html):
     node = shutil.which('node')
     if node is None:
         test_case.skipTest('Node is required to validate rendered JavaScript syntax.')
-    scripts = re.findall(
-        r'<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>',
+    script_tags = re.findall(
+        r'<script([^>]*)>(.*?)</script>',
         rendered_html,
         flags=re.IGNORECASE | re.DOTALL,
     )
+    scripts = []
+    for attributes, content in script_tags:
+        if re.search(r'\bsrc\s*=', attributes, flags=re.IGNORECASE):
+            continue
+        script_type = re.search(
+            r'\btype\s*=\s*["\']([^"\']+)["\']',
+            attributes,
+            flags=re.IGNORECASE,
+        )
+        if script_type and script_type.group(1).lower() not in {
+            'text/javascript',
+            'application/javascript',
+            'module',
+        }:
+            continue
+        scripts.append(content)
     test_case.assertTrue(scripts)
     with TemporaryDirectory() as directory:
         for index, script in enumerate(scripts):
@@ -71,6 +94,85 @@ def _png_image():
         + chunk(b'IDAT', zlib.compress(b'\x00\x00\x00\x00\x00'))
         + chunk(b'IEND', b'')
     )
+
+
+def _oversized_png():
+    image = _png_image()
+    text = b'Comment\0' + b'x' * (5 * 1024 * 1024)
+    body = b'tEXt' + text
+    chunk = (
+        struct.pack('>I', len(text))
+        + body
+        + struct.pack('>I', zlib.crc32(body) & 0xFFFFFFFF)
+    )
+    return image[:33] + chunk + image[33:]
+
+
+class FacilityPhotoValidationTests(SimpleTestCase):
+    def photo_form(self, name, content):
+        uploaded = SimpleUploadedFile(
+            name,
+            content,
+            content_type='image/jpeg',
+        )
+        return FacilityPhotoForm(
+            data={'category': FacilityPhoto.Category.COURT},
+            files={'image': uploaded},
+        )
+
+    def test_allowed_formats_are_accepted_and_files_rewound(self):
+        jpeg = base64.b64decode(
+            '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsL'
+            'DBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/'
+            'wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAAB//EABQQAQAAAAAA'
+            'AAAAAAAAAAAAAAD/2gAIAQEAAD8Af3//2Q=='
+        )
+        webp = base64.b64decode(
+            'UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAUAmJaQAA3AA/vz0AAA='
+        )
+        for name, content in (
+            ('court.PNG', _png_image()),
+            ('court.jpg', jpeg),
+            ('court.jpeg', jpeg),
+            ('court.webp', webp),
+        ):
+            with self.subTest(name=name):
+                form = self.photo_form(name, content)
+                self.assertTrue(form.is_valid(), form.errors)
+                self.assertEqual(form.cleaned_data['image'].read(), content)
+
+    def test_spoofed_mismatched_and_truncated_files_are_rejected(self):
+        for name, content in (
+            ('court.jpg', b'not an image'),
+            ('court.jpeg', b'\xff\xd8\xff'),
+            ('court.png', b'\x89PNG\r\n\x1a\n'),
+            ('court.webp', b'RIFF\x00\x00\x00\x00WEBP'),
+            ('court.jpg', _png_image()),
+            ('court.txt', _png_image()),
+            ('court.exe', _png_image()),
+        ):
+            with self.subTest(name=name):
+                form = self.photo_form(name, content)
+                self.assertFalse(form.is_valid())
+                self.assertIn('image', form.errors)
+
+    def test_file_size_limit_is_inclusive(self):
+        image = _png_image()
+        limit = 5 * 1024 * 1024
+        body = b'tEXt' + b'x' * (limit - len(image) - 12)
+        chunk = (
+            struct.pack('>I', len(body) - 4)
+            + body
+            + struct.pack('>I', zlib.crc32(body) & 0xFFFFFFFF)
+        )
+        exactly_limit = image[:33] + chunk + image[33:]
+        self.assertEqual(len(exactly_limit), limit)
+        form = self.photo_form('court.png', exactly_limit)
+        self.assertTrue(form.is_valid(), form.errors)
+
+        form = self.photo_form('court.png', _oversized_png())
+        self.assertFalse(form.is_valid())
+        self.assertIn('5 MB or smaller', str(form.errors['image']))
 
 
 class InAppManagementPortalTests(TestCase):
@@ -1442,3 +1544,353 @@ class InAppManagementPortalTests(TestCase):
             set(closure_response.context['facilities']),
             {self.facility, self.other_facility},
         )
+
+
+class OwnerVenueUpgradeTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.owner = user_model.objects.create_user(username='venue-upgrade-owner')
+        UserProfile.objects.create(user=cls.owner, role=UserProfile.Role.COURT_OWNER)
+        cls.other_owner = user_model.objects.create_user(
+            username='venue-upgrade-other-owner',
+        )
+        UserProfile.objects.create(
+            user=cls.other_owner,
+            role=UserProfile.Role.COURT_OWNER,
+        )
+        cls.player = user_model.objects.create_user(username='venue-upgrade-player')
+        cls.sport = Sport.objects.create(
+            name='Upgrade Pickleball',
+            slug='upgrade-pickleball',
+        )
+        cls.facility = Facility.objects.create(
+            name="Tonio's Dink District",
+            owner=cls.owner,
+            capacity=16,
+            default_hourly_rate='300.00',
+            is_verified=True,
+            verification_status=Facility.VerificationStatus.VERIFIED,
+        )
+        cls.other_facility = Facility.objects.create(
+            name='Other Owner Facility',
+            owner=cls.other_owner,
+        )
+        cls.facility_sport = FacilitySport.objects.create(
+            facility=cls.facility,
+            sport=cls.sport,
+            hourly_rate='250.00',
+        )
+        cls.other_facility_sport = FacilitySport.objects.create(
+            facility=cls.other_facility,
+            sport=cls.sport,
+        )
+        cls.court = BookableResource.objects.create(
+            facility=cls.facility,
+            name='Court 1',
+            capacity=16,
+        )
+        ResourceSport.objects.create(
+            resource=cls.court,
+            facility_sport=cls.facility_sport,
+        )
+
+    def test_owner_can_manage_courts_and_cannot_remove_the_last_active_court(self):
+        self.client.force_login(self.owner)
+        endpoint = reverse(
+            'owner-manage-courts',
+            kwargs={'facility_id': self.facility.pk},
+        )
+        add_response = self.client.post(
+            endpoint,
+            {
+                'action': 'add',
+                'name': 'Court 2',
+                'capacity': '12',
+                'hourly_rate': '275.00',
+                'display_order': '1',
+                'sports': str(self.facility_sport.pk),
+            },
+        )
+        self.assertRedirects(add_response, reverse('owner_dashboard'))
+        court_two = BookableResource.objects.get(
+            facility=self.facility,
+            name='Court 2',
+        )
+        self.assertEqual(court_two.hourly_rate, Decimal('275.00'))
+        self.assertTrue(court_two.resource_sports.filter(
+            facility_sport=self.facility_sport,
+        ).exists())
+
+        edit_response = self.client.post(
+            endpoint,
+            {
+                'action': 'save',
+                'resource_id': court_two.pk,
+                f'court-{court_two.pk}-name': 'Pickleball Court B',
+                f'court-{court_two.pk}-capacity': '14',
+                f'court-{court_two.pk}-hourly_rate': '',
+                f'court-{court_two.pk}-display_order': '2',
+                f'court-{court_two.pk}-sports': str(self.facility_sport.pk),
+            },
+        )
+        self.assertRedirects(edit_response, reverse('owner_dashboard'))
+        court_two.refresh_from_db()
+        self.assertEqual(court_two.name, 'Pickleball Court B')
+        self.assertIsNone(court_two.hourly_rate)
+
+        deactivate_first = self.client.post(
+            endpoint,
+            {'action': 'toggle', 'resource_id': self.court.pk},
+        )
+        self.assertRedirects(deactivate_first, reverse('owner_dashboard'))
+        court_two_id = court_two.pk
+        block_last_delete = self.client.post(
+            endpoint,
+            {'action': 'delete', 'resource_id': court_two_id},
+        )
+        self.assertRedirects(block_last_delete, reverse('owner_dashboard'))
+        self.assertTrue(
+            BookableResource.objects.filter(pk=court_two_id).exists(),
+        )
+
+        self.client.post(
+            endpoint,
+            {'action': 'toggle', 'resource_id': self.court.pk},
+        )
+        delete_response = self.client.post(
+            endpoint,
+            {'action': 'delete', 'resource_id': court_two_id},
+        )
+        self.assertRedirects(delete_response, reverse('owner_dashboard'))
+        self.assertFalse(
+            BookableResource.objects.filter(pk=court_two_id).exists(),
+        )
+
+    def test_photo_cover_lifecycle_upload_validation_and_file_cleanup(self):
+        self.client.force_login(self.owner)
+        endpoint = reverse(
+            'owner-manage-photos',
+            kwargs={'facility_id': self.facility.pk},
+        )
+        with TemporaryDirectory() as media_directory, override_settings(
+            MEDIA_ROOT=media_directory,
+        ):
+            first_response = self.client.post(
+                endpoint,
+                {
+                    'action': 'upload',
+                    'caption': 'Main court',
+                    'category': FacilityPhoto.Category.COURT,
+                    'image': SimpleUploadedFile(
+                        'main-court.png',
+                        _png_image(),
+                        content_type='image/png',
+                    ),
+                },
+            )
+            self.assertRedirects(first_response, reverse('owner_dashboard'))
+            first = FacilityPhoto.objects.get(caption='Main court')
+            self.assertTrue(first.is_cover)
+            first_file = Path(media_directory) / first.image.name
+            self.assertTrue(first_file.exists())
+
+            second_response = self.client.post(
+                endpoint,
+                {
+                    'action': 'upload',
+                    'caption': 'Court lights',
+                    'category': FacilityPhoto.Category.AMENITY,
+                    'image': SimpleUploadedFile(
+                        'court-lights.png',
+                        _png_image(),
+                        content_type='image/png',
+                    ),
+                },
+            )
+            self.assertRedirects(second_response, reverse('owner_dashboard'))
+            second = FacilityPhoto.objects.get(caption='Court lights')
+            self.assertFalse(second.is_cover)
+            self.client.post(
+                endpoint,
+                {'action': 'set_cover', 'photo_id': second.pk},
+            )
+            first.refresh_from_db()
+            second.refresh_from_db()
+            self.assertFalse(first.is_cover)
+            self.assertTrue(second.is_cover)
+            second_file = Path(media_directory) / second.image.name
+            with self.captureOnCommitCallbacks(execute=True):
+                delete_response = self.client.post(
+                    endpoint,
+                    {'action': 'delete', 'photo_id': second.pk},
+                )
+            self.assertRedirects(delete_response, reverse('owner_dashboard'))
+            self.assertFalse(second_file.exists())
+            first.refresh_from_db()
+            self.assertTrue(first.is_cover)
+
+            invalid_type = self.client.post(
+                endpoint,
+                {
+                    'action': 'upload',
+                    'caption': 'Not an image',
+                    'image': SimpleUploadedFile(
+                        'not-an-image.txt',
+                        b'not an image',
+                        content_type='text/plain',
+                    ),
+                },
+            )
+            self.assertRedirects(invalid_type, reverse('owner_dashboard'))
+            self.assertFalse(
+                FacilityPhoto.objects.filter(caption='Not an image').exists(),
+            )
+
+            oversized = self.client.post(
+                endpoint,
+                {
+                    'action': 'upload',
+                    'caption': 'Too large',
+                    'image': SimpleUploadedFile(
+                        'too-large.png',
+                        _oversized_png(),
+                        content_type='image/png',
+                    ),
+                },
+            )
+            self.assertRedirects(oversized, reverse('owner_dashboard'))
+            self.assertFalse(
+                FacilityPhoto.objects.filter(caption='Too large').exists(),
+            )
+
+    def test_owner_can_save_deduplicated_amenities_and_public_discovery_displays_them(self):
+        self.client.force_login(self.owner)
+        endpoint = reverse(
+            'owner-manage-amenities',
+            kwargs={'facility_id': self.facility.pk},
+        )
+        save_response = self.client.post(
+            endpoint,
+            {
+                'amenities': ['Covered Roof', 'Drinking Water'],
+                'custom_amenities': ' Drinking Water, Bounce area, Bounce area , Patio ',
+            },
+        )
+        self.assertRedirects(save_response, reverse('owner_dashboard'))
+        self.facility.refresh_from_db()
+        self.assertEqual(
+            self.facility.amenities,
+            ['Covered Roof', 'Drinking Water', 'Bounce area', 'Patio'],
+        )
+
+        with TemporaryDirectory() as media_directory, override_settings(
+            MEDIA_ROOT=media_directory,
+        ):
+            photo = FacilityPhoto.objects.create(
+                facility=self.facility,
+                image=SimpleUploadedFile(
+                    'venue.png',
+                    _png_image(),
+                    content_type='image/png',
+                ),
+                caption='The main court',
+            )
+            detail = self.client.get(
+                reverse('facility-detail-page', kwargs={'pk': self.facility.pk}),
+            )
+            self.assertEqual(detail.status_code, 200)
+            self.assertContains(detail, "Tonio&#x27;s Dink District")
+            self.assertContains(detail, 'Venue photo gallery')
+            self.assertContains(detail, photo.image.url)
+            self.assertContains(detail, 'Covered Roof')
+            self.assertContains(detail, 'Court 1')
+            assert_rendered_scripts_parse(self, detail.content.decode())
+
+            home = self.client.get(reverse('home'))
+            self.assertEqual(home.status_code, 200)
+            assert_rendered_scripts_parse(self, home.content.decode())
+            discovery = self.client.get(reverse('facility-list'))
+            self.assertEqual(discovery.status_code, 200)
+            public_facility = next(
+                item for item in discovery.data['results']
+                if item['id'] == self.facility.pk
+            )
+            self.assertEqual(public_facility['court_count'], 1)
+            self.assertEqual(public_facility['cover_photo_url'], photo.image.url)
+            self.assertEqual(public_facility['amenities'], self.facility.amenities)
+
+    def test_owner_mutation_endpoints_require_post_and_enforce_tenant_roles(self):
+        endpoints = (
+            ('owner-manage-courts', {'action': 'delete', 'resource_id': self.court.pk}),
+            ('owner-manage-photos', {'action': 'delete', 'photo_id': 999999}),
+            ('owner-manage-amenities', {'custom_amenities': 'Parking'}),
+        )
+        for route_name, payload in endpoints:
+            path = reverse(
+                route_name,
+                kwargs={'facility_id': self.facility.pk},
+            )
+            self.assertEqual(self.client.get(path).status_code, 405)
+            self.assertEqual(self.client.post(path, payload).status_code, 302)
+
+        self.client.force_login(self.owner)
+        for route_name, _payload in endpoints:
+            path = reverse(
+                route_name,
+                kwargs={'facility_id': self.facility.pk},
+            )
+            self.assertEqual(self.client.get(path).status_code, 405)
+
+        self.client.force_login(self.other_owner)
+        for route_name, payload in endpoints:
+            path = reverse(
+                route_name,
+                kwargs={'facility_id': self.facility.pk},
+            )
+            self.assertEqual(self.client.post(path, payload).status_code, 404)
+
+        self.client.force_login(self.player)
+        for route_name, payload in endpoints:
+            path = reverse(
+                route_name,
+                kwargs={'facility_id': self.facility.pk},
+            )
+            self.assertEqual(self.client.post(path, payload).status_code, 403)
+
+    def test_existing_facilities_without_resources_get_one_default_court_idempotently(self):
+        legacy_facility = Facility.objects.create(
+            name='Legacy facility without a court',
+            owner=self.owner,
+        )
+        legacy_sport = FacilitySport.objects.create(
+            facility=legacy_facility,
+            sport=self.sport,
+        )
+        migration = importlib.import_module(
+            'facilities.migrations.0007_bookableresource_display_order_and_more',
+        )
+        editor = SimpleNamespace(connection=connection)
+
+        migration.create_default_courts(apps, editor)
+        migration.create_default_courts(apps, editor)
+
+        self.assertEqual(
+            legacy_facility.resources.filter(name='Court 1').count(),
+            1,
+        )
+        default_court = legacy_facility.resources.get(name='Court 1')
+        self.assertTrue(default_court.resource_sports.filter(
+            facility_sport=legacy_sport,
+        ).exists())
+        self.assertEqual(self.facility.resources.count(), 1)
+
+    def test_owner_dashboard_gallery_markup_and_inline_javascript_render(self):
+        self.client.force_login(self.owner)
+        response = self.client.get(reverse('owner_dashboard'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Venue photos')
+        self.assertContains(response, 'Save Amenities')
+        self.assertContains(response, 'Delete Photo')
+        assert_rendered_scripts_parse(self, response.content.decode())

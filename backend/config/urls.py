@@ -18,10 +18,14 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
+from django.views.static import serve
 
 from facilities.management_views import (
     management_closures_view,
     management_facilities_view,
+    owner_manage_amenities_view,
+    owner_manage_courts_view,
+    owner_manage_photos_view,
     owner_dashboard_view,
 )
 from facilities.views import facility_detail_view
@@ -72,6 +76,21 @@ urlpatterns = [
         name='admin_delete_all_logs',
     ),
     path('owner/dashboard/', owner_dashboard_view, name='owner_dashboard'),
+    path(
+        'owner/facilities/<int:facility_id>/courts/',
+        owner_manage_courts_view,
+        name='owner-manage-courts',
+    ),
+    path(
+        'owner/facilities/<int:facility_id>/photos/',
+        owner_manage_photos_view,
+        name='owner-manage-photos',
+    ),
+    path(
+        'owner/facilities/<int:facility_id>/amenities/',
+        owner_manage_amenities_view,
+        name='owner-manage-amenities',
+    ),
     path('management/facilities/', management_facilities_view, name='management_facilities'),
     path('management/closures/', management_closures_view, name='management_closures'),
     path('logout/', logout_view, name='logout'),
@@ -81,3 +100,11 @@ urlpatterns = [
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+else:
+    urlpatterns += [
+        path(
+            'media/<path:path>',
+            serve,
+            {'document_root': settings.MEDIA_ROOT},
+        ),
+    ]

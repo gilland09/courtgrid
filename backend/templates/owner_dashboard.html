@@ -119,32 +119,86 @@
             <div class="row g-4">
                 <div class="col-lg-6">
                     <h3 class="h5">Courts / resources</h3>
-                    {% for resource in panel.facility.resources.all %}
-                        <form method="post" class="border rounded-3 p-3 mb-2">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="save_resource">
-                            <input type="hidden" name="facility_id" value="{{ panel.facility.pk }}">
-                            <input type="hidden" name="resource_id" value="{{ resource.pk }}">
-                            <div class="row g-2 align-items-end">
-                                <div class="col-sm-5"><label class="form-label">Court name</label><input class="form-control" name="name" value="{{ resource.name }}" required></div>
-                                <div class="col-sm-3"><label class="form-label">Capacity</label><input class="form-control" name="capacity" type="number" min="1" value="{{ resource.capacity|default_if_none:'' }}"></div>
-                                <div class="col-sm-2 form-check"><input class="form-check-input" name="is_active" type="checkbox" value="on" {% if resource.is_active %}checked{% endif %}><label class="form-check-label">Active</label></div>
-                                <div class="col-sm-2"><button class="btn btn-outline-primary btn-sm" type="submit">Save</button></div>
+                    {% for court in panel.courts %}
+                        <article class="border rounded-3 p-3 mb-2">
+                            <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                                <div>
+                                    <h4 class="h6 mb-1">{{ court.resource.name }}</h4>
+                                    <span class="badge {% if court.resource.is_active %}text-bg-success{% else %}text-bg-secondary{% endif %}">
+                                        {% if court.resource.is_active %}Active{% else %}Inactive{% endif %}
+                                    </span>
+                                    {% if court.has_effective_rate %}
+                                        <span class="small text-body-secondary"> · ₱{{ court.effective_rate|floatformat:2 }}/hr</span>
+                                    {% else %}
+                                        <span class="small text-body-secondary"> · Sport-specific rate</span>
+                                    {% endif %}
+                                    {% if court.rates %}
+                                        <span class="d-block small text-body-secondary mt-1">
+                                            {% for rate in court.rates %}
+                                                {{ rate.sport }}:
+                                                {% if rate.has_amount %}₱{{ rate.amount|floatformat:2 }}/hr{% else %}Not set{% endif %}
+                                                {% if not forloop.last %} · {% endif %}
+                                            {% endfor %}
+                                        </span>
+                                    {% endif %}
+                                </div>
+                                <form method="post" action="{% url 'owner-manage-courts' panel.facility.pk %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="toggle">
+                                    <input type="hidden" name="resource_id" value="{{ court.resource.pk }}">
+                                    <button class="btn btn-outline-secondary btn-sm" type="submit">
+                                        {% if court.resource.is_active %}Deactivate{% else %}Activate{% endif %}
+                                    </button>
+                                </form>
                             </div>
-                        </form>
+                            <form method="post" action="{% url 'owner-manage-courts' panel.facility.pk %}" class="row g-2">
+                            {% csrf_token %}
+                                <input type="hidden" name="action" value="save">
+                                <input type="hidden" name="resource_id" value="{{ court.resource.pk }}">
+                                {% for field in court.form %}
+                                    <div class="{% if field.name == 'sports' %}col-12{% else %}col-sm-6{% endif %}">
+                                        {% if field.name == 'sports' %}
+                                            <fieldset>
+                                                <legend class="form-label">{{ field.label }}</legend>
+                                                {{ field }}
+                                            </fieldset>
+                                        {% else %}
+                                            <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                                            {{ field }}
+                                        {% endif %}
+                                        {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                                    </div>
+                                {% endfor %}
+                                <div class="col-12 d-flex gap-2">
+                                    <button class="btn btn-outline-primary btn-sm" type="submit">Save Court</button>
+                                </div>
+                            </form>
+                            <form method="post" action="{% url 'owner-manage-courts' panel.facility.pk %}" class="mt-2">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="delete">
+                                <input type="hidden" name="resource_id" value="{{ court.resource.pk }}">
+                                <button class="btn btn-outline-danger btn-sm" type="submit">Delete Court</button>
+                            </form>
+                        </article>
                     {% empty %}
                         <p class="text-body-secondary">No courts added yet.</p>
                     {% endfor %}
-                    <form method="post" class="border rounded-3 p-3">
+                    <form method="post" action="{% url 'owner-manage-courts' panel.facility.pk %}" class="border rounded-3 p-3">
                         {% csrf_token %}
-                        <input type="hidden" name="action" value="save_resource">
-                        <input type="hidden" name="facility_id" value="{{ panel.facility.pk }}">
+                        <input type="hidden" name="action" value="add">
                         <h4 class="h6">Add a court</h4>
-                        <div class="row g-2 align-items-end">
-                            <div class="col-sm-6"><label class="form-label">Court name</label><input class="form-control" name="name" placeholder="Court 1" required></div>
-                            <div class="col-sm-3"><label class="form-label">Capacity</label><input class="form-control" name="capacity" type="number" min="1"></div>
-                            <div class="col-sm-3"><button class="btn btn-primary btn-sm" type="submit">Add Court</button></div>
-                        </div>
+                        {% for field in panel.court_add_form %}
+                            <div class="mb-2">
+                                {% if field.name == 'sports' %}
+                                    <fieldset><legend class="form-label">{{ field.label }}</legend>{{ field }}</fieldset>
+                                {% else %}
+                                    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                                    {{ field }}
+                                {% endif %}
+                                {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                            </div>
+                        {% endfor %}
+                        <button class="btn btn-primary btn-sm" type="submit">Add Court</button>
                     </form>
                 </div>
 
@@ -171,6 +225,78 @@
                     {% endfor %}
                 </div>
             </div>
+
+            <section class="owner-gallery-panel mt-4" aria-labelledby="gallery-heading-{{ panel.facility.pk }}">
+                <h3 id="gallery-heading-{{ panel.facility.pk }}" class="h5">Venue photos</h3>
+                <p class="small text-body-secondary">Upload up to 12 JPG, JPEG, PNG, or WebP images, up to 5 MB each.</p>
+                <form method="post" enctype="multipart/form-data" action="{% url 'owner-manage-photos' panel.facility.pk %}" class="row g-3 border rounded-3 p-3 mb-3">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="upload">
+                    {% for field in panel.photo_form %}
+                        <div class="col-md-6">
+                            <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                            {{ field }}
+                            {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                        </div>
+                    {% endfor %}
+                    <div class="col-12"><button class="btn btn-primary" type="submit">Upload Photo</button></div>
+                </form>
+                <div class="owner-photo-grid">
+                    {% for photo in panel.photos %}
+                        <article class="owner-photo-card">
+                            <img src="{{ photo.image.url }}" alt="{{ photo.caption|default:photo.get_category_display }}">
+                            <div class="p-2">
+                                <div class="d-flex justify-content-between gap-2">
+                                    <span class="badge text-bg-light">{{ photo.get_category_display }}</span>
+                                    {% if photo.is_cover %}<span class="badge text-bg-success">Cover</span>{% endif %}
+                                </div>
+                                <p class="small mt-2 mb-2">{{ photo.caption|default:"No caption" }}</p>
+                                {% if not photo.is_cover %}
+                                    <form method="post" action="{% url 'owner-manage-photos' panel.facility.pk %}" class="mb-2">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="set_cover">
+                                        <input type="hidden" name="photo_id" value="{{ photo.pk }}">
+                                        <button class="btn btn-outline-primary btn-sm w-100" type="submit">Set as Cover</button>
+                                    </form>
+                                {% endif %}
+                                <button
+                                    class="btn btn-outline-danger btn-sm w-100"
+                                    type="button"
+                                    data-photo-delete-trigger
+                                    data-photo-delete-url="{% url 'owner-manage-photos' panel.facility.pk %}"
+                                    data-photo-id="{{ photo.pk }}"
+                                    data-photo-caption="{{ photo.caption|default:photo.get_category_display }}"
+                                >Delete Photo</button>
+                            </div>
+                        </article>
+                    {% empty %}
+                        <p class="text-body-secondary">No venue photos uploaded yet.</p>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <section class="mt-4" aria-labelledby="amenities-heading-{{ panel.facility.pk }}">
+                <h3 id="amenities-heading-{{ panel.facility.pk }}" class="h5">Venue amenities</h3>
+                <form method="post" action="{% url 'owner-manage-amenities' panel.facility.pk %}" class="border rounded-3 p-3">
+                    {% csrf_token %}
+                    {% for field in panel.amenities_form %}
+                        <div class="mb-3">
+                            {% if field.name == 'amenities' %}
+                                <fieldset>
+                                    <legend class="form-label">{{ field.label }}</legend>
+                                    <div class="amenity-checkbox-grid">{{ field }}</div>
+                                </fieldset>
+                            {% else %}
+                                <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                                {{ field }}
+                                {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                            {% endif %}
+                            {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                        </div>
+                    {% endfor %}
+                    <button class="btn btn-outline-primary" type="submit">Save Amenities</button>
+                </form>
+            </section>
 
             <div class="mt-4">
                 <h3 class="h5">Operating hours</h3>
@@ -339,6 +465,29 @@
 </section>
 {% endblock %}
 
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const overlay = document.querySelector('[data-photo-delete-modal]');
+    if (!overlay) return;
+    const form = overlay.querySelector('[data-photo-delete-form]');
+    const photoCaption = overlay.querySelector('[data-photo-caption]');
+
+    document.addEventListener('click', (event) => {
+        const trigger = event.target.closest('[data-photo-delete-trigger]');
+        if (!trigger) return;
+        event.preventDefault();
+        form.action = trigger.dataset.photoDeleteUrl;
+        form.querySelector('[name="photo_id"]').value = trigger.dataset.photoId;
+        photoCaption.textContent = trigger.dataset.photoCaption;
+        overlay.classList.add('is-open');
+        overlay.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('cg-modal-open');
+    });
+});
+</script>
+{% endblock %}
+
 {% block modals %}
 <div
     class="cg-modal-overlay"
@@ -369,6 +518,28 @@
                     <div class="d-flex gap-2 mt-3">
                         <button type="button" class="btn btn-outline-secondary flex-fill" data-modal-close>Keep Booking</button>
                         <button type="submit" class="btn btn-danger flex-fill">Cancel Booking</button>
+                    </div>
+                </div>
+            </form>
+        </section>
+    </div>
+</div>
+<div class="cg-modal-overlay" data-photo-delete-modal aria-hidden="true">
+    <div class="cg-modal-card" role="dialog" aria-modal="true" aria-labelledby="photo-delete-title">
+        <section class="card border-0">
+            <div class="modal-header border-0 pb-0">
+                <h2 class="modal-title h5" id="photo-delete-title">Delete venue photo?</h2>
+                <button type="button" class="btn-close" data-modal-close aria-label="Close"></button>
+            </div>
+            <form method="post" data-photo-delete-form>
+                <div class="modal-body">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="delete">
+                    <input type="hidden" name="photo_id">
+                    <p>Delete <strong data-photo-caption></strong>? This cannot be undone.</p>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-outline-secondary flex-fill" data-modal-close>Keep Photo</button>
+                        <button type="submit" class="btn btn-danger flex-fill">Delete Photo</button>
                     </div>
                 </div>
             </form>

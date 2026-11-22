@@ -174,9 +174,7 @@ class BookingCreateView(APIView):
                     )
                 })
 
-            hourly_rate = facility_sport.hourly_rate
-            if hourly_rate is None:
-                hourly_rate = resource.facility.default_hourly_rate
+            hourly_rate = resource.effective_hourly_rate_for(facility_sport)
             if hourly_rate is None:
                 raise ValidationError({
                     'sport_id': 'No hourly rate is configured for this facility and sport.'

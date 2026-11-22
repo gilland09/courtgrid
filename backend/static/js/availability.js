@@ -152,7 +152,11 @@ function resourceForSlot(slot) {
 }
 
 function selectedTotal() {
-    return availabilityHelpers.calculateSlotTotal(selectedSlots, sportRates);
+    return availabilityHelpers.calculateSlotTotal(
+        selectedSlots,
+        sportRates,
+        facilityResources,
+    );
 }
 
 function selectedPaymentMethod() {
@@ -163,7 +167,13 @@ function updatePaymentBreakdown() {
     const gross = selectedTotal();
     const breakdown = availabilityHelpers.calculateFeeBreakdown(gross);
     const slotCount = selectedSlots.length;
-    const hourlyRate = slotCount ? Number(sportRates[String(selectedSlots[0].sportId)] || 0) : 0;
+    const hourlyRate = slotCount
+        ? availabilityHelpers.calculateSlotTotal(
+            [selectedSlots[0]],
+            sportRates,
+            facilityResources,
+        )
+        : 0;
     rentalBreakdownLabel.textContent = (
         `Court Rental (${slotCount} ${slotCount === 1 ? 'slot' : 'slots'} × `
         + `${formatCurrency(hourlyRate)}/hr)`

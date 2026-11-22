@@ -60,6 +60,17 @@ test('selected slots total their per-slot hourly rates', () => {
     );
 });
 
+test('a court-specific rate overrides the facility sport rate for that court', () => {
+    assert.equal(
+        calculateSlotTotal(
+            [{ resourceId: 7, sportId: 2 }, { resourceId: 8, sportId: 2 }],
+            { 2: '250.00' },
+            [{ id: 7, hourly_rate: '175.00' }, { id: 8, hourly_rate: null }],
+        ),
+        425,
+    );
+});
+
 test('commission breakdown rounds to cents and preserves the gross total', () => {
     assert.deepEqual(calculateFeeBreakdown(500), {
         gross: 500,

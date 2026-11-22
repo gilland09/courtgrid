@@ -33,6 +33,25 @@ function renderFacilitiesList(facilities) {
         const card = document.createElement('article');
         card.className = 'facility-card h-100';
 
+        const photoHeader = document.createElement('div');
+        photoHeader.className = 'facility-card-photo';
+        const placeholder = document.createElement('div');
+        placeholder.className = 'facility-card-photo-placeholder';
+        placeholder.textContent = 'CourtGrid venue';
+        if (facility.cover_photo_url) {
+            const photo = document.createElement('img');
+            photo.src = facility.cover_photo_url;
+            photo.alt = `${facility.name} venue`;
+            photo.loading = 'lazy';
+            photo.addEventListener('error', () => {
+                photoHeader.replaceChildren(placeholder);
+            }, { once: true });
+            photoHeader.append(photo);
+        } else {
+            photoHeader.append(placeholder);
+        }
+        card.append(photoHeader);
+
         const cardBody = document.createElement('div');
         cardBody.className = 'card-body d-flex flex-column';
 
@@ -59,6 +78,27 @@ function renderFacilitiesList(facilities) {
             ? 'Verified location'
             : 'Pending platform verification';
         cardBody.append(verification);
+
+        const venueDetails = document.createElement('div');
+        venueDetails.className = 'd-flex flex-wrap gap-2 mb-3';
+        const courtCount = Number(facility.court_count) || 0;
+        const courtBadge = document.createElement('span');
+        courtBadge.className = 'venue-detail-badge';
+        courtBadge.textContent = `${courtCount} ${courtCount === 1 ? 'Court' : 'Courts'}`;
+        venueDetails.append(courtBadge);
+        (facility.amenities || []).slice(0, 3).forEach((amenity) => {
+            const badge = document.createElement('span');
+            badge.className = 'venue-detail-badge';
+            badge.textContent = amenity;
+            venueDetails.append(badge);
+        });
+        if ((facility.amenities || []).length > 3) {
+            const moreBadge = document.createElement('span');
+            moreBadge.className = 'venue-detail-badge';
+            moreBadge.textContent = `+${facility.amenities.length - 3} more`;
+            venueDetails.append(moreBadge);
+        }
+        cardBody.append(venueDetails);
 
         const sportBadges = document.createElement('div');
         sportBadges.className = 'd-flex flex-wrap gap-2 mt-auto mb-3';

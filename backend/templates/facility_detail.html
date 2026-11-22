@@ -19,6 +19,72 @@
         </div>
     </header>
 
+    {% if facility_photos %}
+        <section class="venue-gallery mt-4" aria-labelledby="venue-gallery-heading">
+            <div class="d-flex justify-content-between align-items-end mb-3">
+                <div>
+                    <p class="text-uppercase small fw-semibold text-body-secondary mb-1">Inside the venue</p>
+                    <h2 id="venue-gallery-heading" class="h4 mb-0">Venue photo gallery</h2>
+                </div>
+                <span class="small text-body-secondary">{{ facility_photos|length }} photos</span>
+            </div>
+            <a class="venue-gallery-cover" href="{{ facility_photos.0.image.url }}" target="_blank" rel="noopener">
+                <img src="{{ facility_photos.0.image.url }}" alt="{{ facility.name }} — {{ facility_photos.0.caption|default:facility_photos.0.get_category_display }}">
+                <span class="venue-gallery-cover-label">Cover photo</span>
+            </a>
+            <div class="venue-gallery-thumbnails mt-2">
+                {% for photo in facility_photos %}
+                    <a href="{{ photo.image.url }}" target="_blank" rel="noopener" aria-label="View {{ photo.get_category_display }} photo{% if photo.caption %}: {{ photo.caption }}{% endif %}">
+                        <img src="{{ photo.image.url }}" alt="{{ photo.caption|default:photo.get_category_display }}">
+                    </a>
+                {% endfor %}
+            </div>
+        </section>
+    {% endif %}
+
+    <div class="row g-3 mt-1">
+        <section class="col-lg-7" aria-labelledby="facility-courts-heading">
+            <div class="p-3 border rounded-3 h-100">
+                <h2 id="facility-courts-heading" class="h5">Available courts</h2>
+                <div class="facility-court-list">
+                    {% for court in facility_courts %}
+                        <article class="facility-court-item">
+                            <div>
+                                <h3 class="h6 mb-1">{{ court.resource.name }}</h3>
+                                <p class="small text-body-secondary mb-0">
+                                    {% if court.sports %}{{ court.sports|join:", " }}{% else %}Sports not listed{% endif %}
+                                    · Capacity {{ court.resource.capacity|default:facility.capacity|default:"Flexible" }}
+                                    {% if court.rates %}<br>
+                                        {% for rate in court.rates %}
+                                            {{ rate.sport }}:
+                                            {% if rate.has_amount %}₱{{ rate.amount|floatformat:2 }}/hr{% else %}Rate not listed{% endif %}
+                                            {% if not forloop.last %} · {% endif %}
+                                        {% endfor %}
+                                    {% elif court.has_rate %}<br>₱{{ court.hourly_rate|floatformat:2 }}/hr
+                                    {% endif %}
+                                </p>
+                            </div>
+                        </article>
+                    {% empty %}
+                        <p class="text-body-secondary mb-0">Court details are not listed yet.</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </section>
+        <section class="col-lg-5" aria-labelledby="facility-amenities-heading">
+            <div class="p-3 border rounded-3 h-100">
+                <h2 id="facility-amenities-heading" class="h5">Venue amenities</h2>
+                {% if amenities %}
+                    <ul class="facility-amenity-list">
+                        {% for amenity in amenities %}<li>{{ amenity }}</li>{% endfor %}
+                    </ul>
+                {% else %}
+                    <p class="text-body-secondary mb-0">Amenities have not been listed.</p>
+                {% endif %}
+            </div>
+        </section>
+    </div>
+
     <section class="when-card mt-4 mb-4" aria-labelledby="when-heading">
         <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
             <div>

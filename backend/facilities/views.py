@@ -24,6 +24,7 @@ from .models import (
     Facility,
     FacilityClosure,
     FacilityOperatingHours,
+    FacilityPhoto,
     FacilitySport,
     Sport,
     SportSchedule,
@@ -69,8 +70,19 @@ class FacilityDiscoveryQuerysetMixin:
             ),
             Prefetch(
                 'resources',
-                queryset=BookableResource.objects.filter(is_active=True),
+                queryset=BookableResource.objects.filter(
+                    is_active=True,
+                ).order_by('display_order', 'name'),
                 to_attr='active_resources',
+            ),
+            Prefetch(
+                'photos',
+                queryset=FacilityPhoto.objects.order_by(
+                    '-is_cover',
+                    'display_order',
+                    'pk',
+                ),
+                to_attr='ordered_photos',
             ),
         )
 
@@ -154,11 +166,22 @@ def facility_detail_view(request, pk):
                 ),
                 to_attr='ordered_operating_hours',
             ),
+            Prefetch(
+                'photos',
+                queryset=FacilityPhoto.objects.order_by(
+                    '-is_cover',
+                    'display_order',
+                    'pk',
+                ),
+                to_attr='ordered_photos',
+            ),
         ),
         pk=pk,
     )
     active_resources = list(
-        facility.resources.filter(is_active=True).order_by('name')
+        facility.resources.filter(is_active=True)
+        .prefetch_related('sports__sport')
+        .order_by('display_order', 'name')
     )
     facility_resources = [
         {
@@ -169,9 +192,40 @@ def facility_detail_view(request, pk):
                 if resource.capacity is not None
                 else facility.capacity
             ),
+            'hourly_rate': (
+                str(resource.hourly_rate)
+                if resource.hourly_rate is not None
+                else None
+            ),
         }
         for resource in active_resources
     ]
+    facility_courts = []
+    for resource in active_resources:
+        resource_sports = list(
+            resource.sports.select_related('sport').order_by('sport__name')
+        )
+        rates = []
+        for facility_sport in resource_sports:
+            amount = resource.effective_hourly_rate_for(facility_sport)
+            rates.append({
+                'sport': facility_sport.sport.name,
+                'amount': amount,
+                'has_amount': amount is not None,
+            })
+        distinct_rates = {item['amount'] for item in rates}
+        effective_rate = (
+            next(iter(distinct_rates))
+            if len(distinct_rates) == 1
+            else resource.effective_hourly_rate if not rates else None
+        )
+        facility_courts.append({
+            'resource': resource,
+            'sports': [item.sport.name for item in resource_sports],
+            'rates': rates,
+            'hourly_rate': effective_rate,
+            'has_rate': effective_rate is not None,
+        })
     sport_rates = {}
     for facility_sport in facility.active_facility_sports:
         rate = facility_sport.hourly_rate
@@ -195,6 +249,9 @@ def facility_detail_view(request, pk):
         'operating_hours': facility.ordered_operating_hours,
         'today': timezone.localdate().isoformat(),
         'facility_resources': facility_resources,
+        'facility_courts': facility_courts,
+        'facility_photos': facility.ordered_photos,
+        'amenities': facility.amenities,
         'sport_rates': sport_rates,
         'booker_email': request.user.email if request.user.is_authenticated else '',
         'booker_phone': phone_number,

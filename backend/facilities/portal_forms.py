@@ -10,8 +10,10 @@ from .models import (
     Facility,
     FacilityClosure,
     FacilityOperatingHours,
+    FacilityPhoto,
     FacilitySport,
     Sport,
+    STANDARD_AMENITIES,
 )
 
 
@@ -155,6 +157,133 @@ class BookableResourceForm(forms.ModelForm):
         fields = ('name', 'capacity', 'is_active')
 
 
+class CourtManagementForm(forms.ModelForm):
+    sports = forms.ModelMultipleChoiceField(
+        queryset=FacilitySport.objects.none(),
+        widget=forms.CheckboxSelectMultiple,
+        label='Sports available on this court',
+    )
+
+    def __init__(self, *args, facility, **kwargs):
+        self.facility = facility
+        super().__init__(*args, **kwargs)
+        self.fields['sports'].queryset = facility.facility_sports.select_related(
+            'sport',
+        )
+        self.fields['sports'].label_from_instance = lambda item: item.sport.name
+        if self.instance.pk and not self.is_bound:
+            self.initial['sports'] = self.instance.sports.values_list(
+                'pk',
+                flat=True,
+            )
+        for field in self.fields.values():
+            if isinstance(field.widget, forms.CheckboxSelectMultiple):
+                continue
+            field.widget.attrs.setdefault('class', 'form-control')
+
+    class Meta:
+        model = BookableResource
+        fields = ('name', 'capacity', 'hourly_rate', 'display_order')
+        widgets = {
+            'capacity': forms.NumberInput(attrs={'min': 1}),
+            'hourly_rate': forms.NumberInput(attrs={'min': 0, 'step': '0.01'}),
+            'display_order': forms.NumberInput(attrs={'min': 0}),
+        }
+
+
+class FacilityPhotoForm(forms.ModelForm):
+    image = forms.FileField(
+        widget=forms.ClearableFileInput(attrs={
+            'accept': '.jpg,.jpeg,.png,.webp',
+        }),
+    )
+
+    class Meta:
+        model = FacilityPhoto
+        fields = ('image', 'caption', 'category', 'is_cover')
+        widgets = {
+            'caption': forms.TextInput(attrs={'maxlength': 140}),
+            'is_cover': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name, field in self.fields.items():
+            if name != 'is_cover':
+                field.widget.attrs.setdefault('class', 'form-control')
+
+    def clean_image(self):
+        uploaded = self.cleaned_data['image']
+        extension = PurePath(uploaded.name).suffix.lower()
+        validators = {
+            '.png': ImageContentValidator.valid_png,
+            '.jpg': ImageContentValidator.valid_jpeg,
+            '.jpeg': ImageContentValidator.valid_jpeg,
+            '.webp': ImageContentValidator.valid_webp,
+        }
+        validator = validators.get(extension)
+        if validator is None:
+            raise forms.ValidationError(
+                'Upload a JPG, JPEG, PNG, or WebP image.',
+            )
+        if uploaded.size > 5 * 1024 * 1024:
+            raise forms.ValidationError('The image must be 5 MB or smaller.')
+        try:
+            content = uploaded.read(5 * 1024 * 1024 + 1)
+        finally:
+            uploaded.seek(0)
+        if len(content) > 5 * 1024 * 1024 or not validator(content):
+            raise forms.ValidationError(
+                'The uploaded file is not a valid image matching its extension.',
+            )
+        return uploaded
+
+
+class FacilityAmenitiesForm(forms.Form):
+    amenities = forms.MultipleChoiceField(
+        choices=tuple((item, item) for item in STANDARD_AMENITIES),
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+    )
+    custom_amenities = forms.CharField(
+        required=False,
+        max_length=1000,
+        label='Custom amenities',
+        help_text='Separate custom amenities with commas.',
+    )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        selected = list(cleaned_data.get('amenities') or [])
+        custom = cleaned_data.get('custom_amenities', '')
+        amenity_names = selected + [
+            item.strip()
+            for item in custom.split(',')
+            if item.strip()
+        ]
+        if any(len(item) > 60 for item in amenity_names):
+            self.add_error(
+                'custom_amenities',
+                'Each amenity must be 60 characters or fewer.',
+            )
+            return cleaned_data
+
+        deduplicated = []
+        seen = set()
+        for item in amenity_names:
+            normalized = item.casefold()
+            if normalized not in seen:
+                deduplicated.append(item)
+                seen.add(normalized)
+        if len(deduplicated) > 20:
+            self.add_error(
+                'custom_amenities',
+                'A venue may list up to 20 amenities.',
+            )
+        cleaned_data['cleaned_amenities'] = deduplicated
+        return cleaned_data
+
+
 class FacilitySportForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -210,10 +339,10 @@ class FacilityPayoutWalletForm(forms.ModelForm):
 
         extension = PurePath(uploaded.name).suffix.lower()
         allowed_types = {
-            '.png': ('image/png', self._valid_png),
-            '.jpg': ('image/jpeg', self._valid_jpeg),
-            '.jpeg': ('image/jpeg', self._valid_jpeg),
-            '.webp': ('image/webp', self._valid_webp),
+            '.png': ('image/png', ImageContentValidator.valid_png),
+            '.jpg': ('image/jpeg', ImageContentValidator.valid_jpeg),
+            '.jpeg': ('image/jpeg', ImageContentValidator.valid_jpeg),
+            '.webp': ('image/webp', ImageContentValidator.valid_webp),
         }
         allowed = allowed_types.get(extension)
         if allowed is None or uploaded.content_type != allowed[0]:
@@ -226,8 +355,10 @@ class FacilityPayoutWalletForm(forms.ModelForm):
             raise forms.ValidationError('The uploaded file is not a valid supported QR image.')
         return uploaded
 
+
+class ImageContentValidator:
     @staticmethod
-    def _valid_png(content):
+    def valid_png(content):
         if not content.startswith(b'\x89PNG\r\n\x1a\n'):
             return False
         offset = 8
@@ -255,7 +386,7 @@ class FacilityPayoutWalletForm(forms.ModelForm):
         return False
 
     @staticmethod
-    def _valid_jpeg(content):
+    def valid_jpeg(content):
         if (
             len(content) < 4
             or not content.startswith(b'\xff\xd8')
@@ -304,7 +435,7 @@ class FacilityPayoutWalletForm(forms.ModelForm):
         return False
 
     @staticmethod
-    def _valid_webp(content):
+    def valid_webp(content):
         if (
             len(content) < 20
             or content[:4] != b'RIFF'

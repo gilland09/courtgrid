@@ -16,6 +16,17 @@
 - **Next recommended task:** Begin **Phase 6 — Documentation and Evidence**, handing off to the documentation team.
 - **Scope boundary preserved:** The Django serial evaluator remains unchanged as the correctness baseline. FastAPI performs candidate evaluation only and does not access PostgreSQL or modify bookings. The Phase 1 CSV contains only explicitly synthetic template examples.
 
+## CourtGrid Owner Portal Upgrade — Multi-Court, Photos, and Amenities
+
+**Status:** Implemented and validated on 2026-11-22.
+
+- Extended the existing `BookableResource` court records, preserving the booking and availability relationships, with optional per-court rates and display ordering. Existing facilities without a resource receive a default `Court 1` through the idempotent `facilities.0007_bookableresource_display_order_and_more` migration.
+- Added tenant-scoped owner controls for court management, venue photo uploads and cover selection, and standard/custom amenities. Photo uploads are limited to 12 per venue and 5 MB each, and deleted files are cleaned up after the database transaction commits.
+- Photo uploads use pure-Python signature and container checks, with no image-library dependency. Migration `facilities.0008_alter_facilityphoto_image` preserves existing records while changing the photo field to file storage.
+- Added cover photos, active-court counts, and amenities to discovery cards; public facility details now show the gallery, amenities, active courts, and applicable rates. Existing booking prices remain unchanged unless a court-specific rate is configured.
+- The latest validation passed 114 Django tests, 12 FastAPI tests, and 9 JavaScript helper tests. `manage.py check`, migration drift checks, production WhiteNoise collection, and JavaScript syntax checks passed.
+- Django media files use `MEDIA_ROOT` and are served from `/media/` in production; deployment must mount persistent storage at the configured media directory.
+
 ## Phase 1 — Requirements and planning
 
 **Status:** Completed and committed as `28a14dc23e88cd84e2d9088b8563069c1867ce61`. The 10 owner-approved MVP decisions are recorded in `docs/phase-1/requirements.md` and are the locked Phase 1 baseline.

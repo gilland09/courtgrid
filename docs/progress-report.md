@@ -2,8 +2,8 @@
 
 ## Project Status Overview
 
-- **Backend, API, distributed integration, automated testing, and CourtGrid-branded frontend UI:** 100% code-complete.
-- **Automated tests:** 38 passing in the recorded validation run: 33 Django tests and 5 FastAPI evaluator tests.
+- **Backend, API, distributed integration, automated testing, and CourtGrid-branded frontend UI:** 100% code-complete. The owner portal now also supports multiple courts per facility, venue photo galleries, and amenities.
+- **Latest automated validation (2026-11-22):** 135 passing checks: 114 Django tests, 12 FastAPI evaluator tests, and 9 JavaScript helper tests.
 
 ## Distributed Architecture
 
@@ -24,10 +24,14 @@ The parallel measurement includes request serialization and HTTP transport, as w
 
 ## Test Coverage
 
-The recorded automated run passed **38 tests**:
+The latest automated run passed **135 tests/checks**:
 
-- **33 Django tests:** Validate discovery OR-matching, booking and overlapping-booking rules, concurrency behavior, availability routing, HTTP payload handling, and timeout fallback behavior.
-- **5 FastAPI tests:** Validate evaluator behavior, process-pool execution, scheduling, endpoint responses, and Pydantic schemas.
+- **114 Django tests:** Validate discovery, bookings, concurrency, availability, owner management, court-specific rates, photo upload/cover behavior and file validation, amenity normalization, tenant isolation, and management endpoint method safety.
+- **12 FastAPI tests:** Validate evaluator behavior, process-pool execution, scheduling, endpoint responses, and Pydantic schemas.
+- **9 JavaScript helper tests:** Validate existing slot/date/payment behavior and court-specific rate calculation.
+- `manage.py check`, `makemigrations --check --dry-run`, production WhiteNoise `collectstatic`, Node syntax checks, and `git diff --check` passed. Photo validation also passed with the image library unavailable.
+
+The earlier Phase 5 report remains a historical record of its 38-test validation run.
 
 ## Next Steps
 

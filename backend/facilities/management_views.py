@@ -9,6 +9,7 @@ from django.db import transaction
 from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.views.decorators.http import require_POST
 
 from bookings.models import Booking, UserProfile, get_user_role
 
@@ -24,12 +25,15 @@ from .models import (
 from .portal_forms import (
     AdminFacilityForm,
     BookableResourceForm,
+    CourtManagementForm,
+    FacilityAmenitiesForm,
     FacilityClosureForm,
     FacilityForm,
+    FacilityOnboardingForm,
     FacilityOperatingHoursForm,
+    FacilityPhotoForm,
     FacilityPayoutWalletForm,
     FacilitySportForm,
-    FacilityOnboardingForm,
 )
 
 
@@ -53,11 +57,43 @@ def owner_facilities(user):
     return Facility.objects.filter(owner=user)
 
 
+def court_management_panel(facility, resource):
+    facility_sports = list(
+        resource.sports.select_related('sport').order_by('sport__name')
+    )
+    rates = []
+    for facility_sport in facility_sports:
+        amount = resource.effective_hourly_rate_for(facility_sport)
+        rates.append({
+            'sport': facility_sport.sport.name,
+            'amount': amount,
+            'has_amount': amount is not None,
+        })
+    distinct_rates = {item['amount'] for item in rates}
+    effective_rate = (
+        next(iter(distinct_rates))
+        if len(distinct_rates) == 1
+        else resource.effective_hourly_rate if not rates else None
+    )
+    return {
+        'resource': resource,
+        'form': CourtManagementForm(
+            facility=facility,
+            instance=resource,
+            prefix=f'court-{resource.pk}',
+        ),
+        'rates': rates,
+        'effective_rate': effective_rate,
+        'has_effective_rate': effective_rate is not None,
+    }
+
+
 def owner_dashboard_context(user, onboarding_form=None):
     facilities = owner_facilities(user).prefetch_related(
         'facility_sports__sport',
         'resources',
         'operating_hours',
+        'photos',
     )
     facility_panels = []
     for facility in facilities:
@@ -73,6 +109,19 @@ def owner_dashboard_context(user, onboarding_form=None):
                 {'schedule': item, 'form': FacilityOperatingHoursForm(instance=item)}
                 for item in facility.operating_hours.all()
             ],
+            'courts': [
+                court_management_panel(facility, resource)
+                for resource in facility.resources.order_by(
+                    'display_order',
+                    'name',
+                )
+            ],
+            'court_add_form': CourtManagementForm(facility=facility),
+            'photos': facility.photos.all(),
+            'photo_form': FacilityPhotoForm(),
+            'amenities_form': FacilityAmenitiesForm(
+                initial={'amenities': facility.amenities},
+            ),
         })
     facility_ids = facilities.values_list('pk', flat=True)
     closures = (
@@ -209,6 +258,150 @@ def pending_venue_verifications():
     ).select_related('owner').order_by('pk')
 
 
+def managed_facility_for_user(user, facility_id):
+    if get_user_role(user) not in {
+        UserProfile.Role.COURT_OWNER,
+        UserProfile.Role.ADMIN,
+    }:
+        raise PermissionDenied
+    return get_object_or_404(owner_facilities(user), pk=facility_id)
+
+
+@require_POST
+@login_required(login_url='login')
+@transaction.atomic
+def owner_manage_courts_view(request, facility_id):
+    facility = managed_facility_for_user(request.user, facility_id)
+    Facility.objects.select_for_update().get(pk=facility.pk)
+    action = request.POST.get('action')
+
+    if action in {'save', 'add'}:
+        resource_id = request.POST.get('resource_id')
+        instance = (
+            get_object_or_404(facility.resources, pk=resource_id)
+            if resource_id else None
+        )
+        form = CourtManagementForm(
+            request.POST,
+            instance=instance,
+            facility=facility,
+            prefix=f'court-{resource_id}' if resource_id else None,
+        )
+        if form.is_valid():
+            resource = form.save(commit=False)
+            resource.facility = facility
+            resource.resource_type = resource.resource_type or 'Court'
+            resource.save()
+            resource.resource_sports.all().delete()
+            ResourceSport.objects.bulk_create([
+                ResourceSport(resource=resource, facility_sport=facility_sport)
+                for facility_sport in form.cleaned_data['sports']
+            ])
+            messages.success(request, 'Court details saved.')
+        else:
+            portal_error(request, form, 'Please correct the court details.')
+    elif action == 'toggle':
+        resource = get_object_or_404(
+            facility.resources.select_for_update(),
+            pk=request.POST.get('resource_id'),
+        )
+        if resource.is_active and facility.resources.filter(
+            is_active=True,
+        ).count() <= 1:
+            messages.error(
+                request,
+                'A facility must keep at least one active court.',
+            )
+        else:
+            resource.is_active = not resource.is_active
+            resource.save(update_fields=('is_active',))
+            messages.success(request, 'Court availability updated.')
+    elif action == 'delete':
+        resource = get_object_or_404(
+            facility.resources.select_for_update(),
+            pk=request.POST.get('resource_id'),
+        )
+        if resource.is_active and facility.resources.filter(
+            is_active=True,
+        ).count() <= 1:
+            messages.error(
+                request,
+                'The last active court cannot be deleted. Add or activate another court first.',
+            )
+        elif Booking.objects.filter(resource=resource).exists():
+            messages.error(
+                request,
+                'This court has booking history and cannot be deleted. Deactivate it instead.',
+            )
+        else:
+            resource.delete()
+            messages.success(request, 'Court deleted.')
+    else:
+        raise PermissionDenied('Unknown court management action.')
+
+    return redirect('owner_dashboard')
+
+
+@require_POST
+@login_required(login_url='login')
+@transaction.atomic
+def owner_manage_photos_view(request, facility_id):
+    facility = managed_facility_for_user(request.user, facility_id)
+    Facility.objects.select_for_update().get(pk=facility.pk)
+    action = request.POST.get('action')
+
+    if action == 'upload':
+        if facility.photos.count() >= 12:
+            messages.error(request, 'A venue may have up to 12 photos.')
+        else:
+            form = FacilityPhotoForm(request.POST, request.FILES)
+            if form.is_valid():
+                photo = form.save(commit=False)
+                photo.facility = facility
+                photo.save()
+                messages.success(request, 'Venue photo uploaded.')
+            else:
+                portal_error(request, form, 'Please upload a valid venue photo.')
+    elif action == 'set_cover':
+        photo = get_object_or_404(
+            facility.photos.select_for_update(),
+            pk=request.POST.get('photo_id'),
+        )
+        photo.is_cover = True
+        photo.save(update_fields=('is_cover',))
+        messages.success(request, 'Venue cover photo updated.')
+    elif action == 'delete':
+        photo = get_object_or_404(
+            facility.photos.select_for_update(),
+            pk=request.POST.get('photo_id'),
+        )
+        storage = photo.image.storage
+        image_name = photo.image.name
+        photo.delete()
+        transaction.on_commit(lambda: storage.delete(image_name))
+        messages.success(request, 'Venue photo deleted.')
+    else:
+        raise PermissionDenied('Unknown photo management action.')
+
+    return redirect('owner_dashboard')
+
+
+@require_POST
+@login_required(login_url='login')
+@transaction.atomic
+def owner_manage_amenities_view(request, facility_id):
+    facility = managed_facility_for_user(request.user, facility_id)
+    facility = Facility.objects.select_for_update().get(pk=facility.pk)
+    form = FacilityAmenitiesForm(request.POST)
+    if form.is_valid():
+        facility.amenities = form.cleaned_data['cleaned_amenities']
+        facility.save(update_fields=('amenities',))
+        messages.success(request, 'Venue amenities saved.')
+    else:
+        portal_error(request, form, 'Please correct the venue amenities.')
+    return redirect('owner_dashboard')
+
+
 @roles_required(UserProfile.Role.COURT_OWNER, UserProfile.Role.ADMIN)
 def owner_dashboard_view(request):
     facilities = owner_facilities(request.user)
@@ -308,13 +501,14 @@ def owner_dashboard_view(request):
                         for facility_sport in facility_sports
                         for day in range(7)
                     ])
-                    resources = [
+                    resources = [facility.ensure_default_court()]
+                    resources.extend(
                         BookableResource.objects.create(
                             facility=facility,
                             name=f'Court {index}',
                         )
-                        for index in range(1, form.cleaned_data['court_count'] + 1)
-                    ]
+                        for index in range(2, form.cleaned_data['court_count'] + 1)
+                    )
                     ResourceSport.objects.bulk_create([
                         ResourceSport(resource=resource, facility_sport=facility_sport)
                         for resource in resources

@@ -291,6 +291,16 @@ class BookingAPITests(TransactionTestCase):
         self.assertEqual(response.data['rate_snapshot'], '300.00')
         self.assertEqual(response.data['total_price'], '300.00')
 
+    def test_resource_specific_rate_overrides_sport_rate(self):
+        self.resource.hourly_rate = Decimal('125.00')
+        self.resource.save(update_fields=('hourly_rate',))
+
+        response = self.create_booking(total_price='0.00')
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['rate_snapshot'], '125.00')
+        self.assertEqual(response.data['total_price'], '125.00')
+
     def test_overlapping_confirmed_booking_returns_http_409_across_sports(self):
         response = self.create_booking()
         self.assertEqual(response.status_code, 201)
